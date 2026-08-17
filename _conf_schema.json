@@ -38,7 +38,7 @@
   "artists": {
     "type": "template_list",
     "description": "画师串预设列表",
-    "hint": "在这里添加常用画师串，也可以在聊天中使用 /artist add 添加",
+    "hint": "在这里添加常用画师串，也可以在聊天中使用 /ynai artist add 添加",
     "templates": {
       "artist": {
         "name": "画师串",
@@ -63,16 +63,23 @@
     "description": "是否允许 NSFW 内容",
     "type": "bool",
     "default": false,
-    "hint": "关闭时，检测到 NSFW 关键词会拒绝生图；开启后不拦截。管理员可通过 /nsfw 命令切换"
+    "hint": "关闭时，检测到 NSFW 关键词会拒绝生图；开启后不拦截。管理员可通过 /ynai nsfw 命令切换"
   },
   "llm_translation_enabled": {
     "description": "是否启用 LLM 翻译 Tag 生成",
     "type": "bool",
     "default": true,
-    "hint": "使用 AstrBot 当前会话的 LLM 把自然语言描述转换为 Danbooru 风格 Tag"
+    "hint": "使用翻译 LLM 把自然语言描述转换为 Danbooru 风格 Tag；/ynai 默认走翻译"
   },
-  "llm_system_prompt": {
-    "description": "LLM 翻译 Tag 的系统提示词",
+  "translation_llm": {
+    "description": "翻译 Tag 使用的 LLM",
+    "type": "string",
+    "default": "",
+    "_special": "select_provider",
+    "hint": "选择用于翻译 Tag 的模型提供商；留空则自动使用当前会话的 LLM"
+  },
+  "translation_prompt": {
+    "description": "翻译 LLM 的翻译提示词",
     "type": "text",
     "default": "You are a Danbooru tag translator. Convert the user's Chinese or English description into a comma-separated list of English Danbooru tags for image generation. Return only tags, no explanations, no markdown, no code fences.",
     "hint": "可以自定义翻译规则"

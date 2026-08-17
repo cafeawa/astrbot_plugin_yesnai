@@ -1,14 +1,14 @@
 """AstrBot 插件：YesNAI 生图。
 
-功能：
-- /nai <prompt> 直接生图
-- /nai -t <描述> 或 /nai --translate <描述> 使用 AstrBot 当前 LLM 翻译为 Danbooru Tag 后生图
-- /artist 管理画师串，生图时自动拼接到提示词前面
-- /preset 查看/设置预设正反提示词
-- /nsfw 查看/切换 NSFW 开关（on/off 仅管理员）
-- /models 查看可用模型
-- /quote 生图前报价
-- /tags 使用 API 的 suggest-tags 工具
+命令：
+- /ynai <描述>             默认使用 LLM 翻译成 Danbooru Tag 后生图
+- /ynai0 <提示词>          直接生图（不做 LLM 翻译）
+- /ynai model              查看可用模型
+- /ynai quote              生图前报价
+- /ynai artist             管理画师串
+- /ynai preset             查看/设置预设正反提示词
+- /ynai nsfw               查看/切换 NSFW 开关
+- /ynai tags               使用 API 的 suggest-tags 工具
 
 管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作。
 """
@@ -28,13 +28,8 @@ from astrbot.api.star import Context, Star, register
 from yesnai_client import YesNAIClient, YesNAIError
 
 _COMMAND_NAMES = {
-    "nai",
-    "models",
-    "quote",
-    "artist",
-    "preset",
-    "tags",
-    "nsfw",
+    "ynai",
+    "ynai0",
 }
 
 _NSFW_KEYWORDS = (
@@ -58,7 +53,7 @@ _NSFW_KEYWORDS = (
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.1.0",
+    "0.2.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -103,7 +98,7 @@ class YesNAIPlugin(Star):
         if self._nsfw_blocked(text):
             return (
                 "当前未开启 NSFW，已拦截该请求。\n"
-                "如确需生成，请联系管理员发送 /nsfw on 开启。"
+                "如确需生成，请联系管理员发送 /ynai nsfw on 开启。"
             )
         return None
 
@@ -116,7 +111,7 @@ class YesNAIPlugin(Star):
 
     @staticmethod
     def _parse_options(text: str) -> tuple[dict[str, Any], str]:
-        """解析 /nai 后面的命令行参数。
+        """解析 /ynai 后面的命令行参数。
 
         支持：
         -t / --translate
@@ -238,28 +233,31 @@ class YesNAIPlugin(Star):
     async def _translate_to_tags(
         self, event: AstrMessageEvent, text: str
     ) -> tuple[bool, str]:
-        """使用 AstrBot 当前会话的 LLM 把自然语言描述翻译成 Danbooru Tag。"""
+        """使用翻译 LLM 把自然语言描述翻译成 Danbooru Tag。"""
         if not self.config.get("llm_translation_enabled", True):
             return False, "LLM 翻译 Tag 功能未启用，请在插件配置中开启 llm_translation_enabled"
 
-        try:
-            provider_id = await self.context.get_current_chat_provider_id(
-                umo=event.unified_msg_origin
-            )
-        except Exception as exc:
-            logger.error(f"获取当前 LLM Provider 失败: {exc}")
-            return False, f"获取当前 LLM Provider 失败: {exc}"
+        configured_llm = str(self.config.get("translation_llm", "") or "").strip()
+        if configured_llm:
+            provider_id = configured_llm
+        else:
+            try:
+                provider_id = await self.context.get_current_chat_provider_id(
+                    umo=event.unified_msg_origin
+                )
+            except Exception as exc:
+                logger.error(f"获取当前 LLM Provider 失败: {exc}")
+                return False, f"获取当前 LLM Provider 失败: {exc}"
 
-        if not provider_id:
-            return False, "当前会话没有可用的 LLM Provider，无法翻译 Tag"
+            if not provider_id:
+                return False, "当前会话没有可用的 LLM Provider，无法翻译 Tag"
 
         system_prompt = str(
-            self.config.get(
-                "llm_system_prompt",
-                "You are a Danbooru tag translator. Convert the user's Chinese or English "
-                "description into a comma-separated list of English Danbooru tags for image "
-                "generation. Return only tags, no explanations, no markdown, no code fences.",
-            )
+            self.config.get("translation_prompt")
+            or self.config.get("llm_system_prompt")
+            or "You are a Danbooru tag translator. Convert the user's Chinese or English "
+            "description into a comma-separated list of English Danbooru tags for image "
+            "generation. Return only tags, no explanations, no markdown, no code fences."
         )
 
         try:
@@ -329,33 +327,48 @@ class YesNAIPlugin(Star):
             payload["negative_prompt"] = negative
         return payload
 
+    @staticmethod
+    def _ynai_help_text() -> str:
+        return (
+            "YesNAI 生图插件命令：\n"
+            "/ynai <描述>                 LLM 翻译 Tag 后生图（默认）\n"
+            "/ynai0 <提示词>              直接生图\n"
+            "/ynai model                  查看可用模型\n"
+            "/ynai quote <描述>            生图前报价\n"
+            "/ynai artist list/set/add/del/clear  管理画师串\n"
+            "/ynai preset show/positive/negative  预设正反提示词\n"
+            "/ynai nsfw on/off/status     NSFW 开关\n"
+            "/ynai tags <描述>             获取推荐 Tag\n\n"
+            "生图可选参数：--model, --size 832x1216, --steps, --scale, "
+            "--seed, --n, --sampler, --negative=\"lowres, bad hands\""
+        )
+
     # ---------------------------------------------------------------
-    # 指令
+    # 公共生成逻辑
     # ---------------------------------------------------------------
-    @filter.command("nai")
-    async def nai(self, event: AstrMessageEvent):
-        """YesNAI 生图：/nai <prompt> 或 /nai -t <描述>"""
-        args = self._command_args(event)
-        if not args:
+    async def _ynai_generate(
+        self, event: AstrMessageEvent, args: str, translate: bool
+    ):
+        options, prompt = self._parse_options(args)
+
+        if not prompt:
             yield event.plain_result(
-                "用法：\n"
-                "/nai <提示词>\n"
-                "/nai -t <中文描述>  # 先用 LLM 翻译成 Tag 再生图\n"
-                "可选参数：--model, --size 832x1216, --steps, --scale, "
-                "--seed, --n, --sampler, --negative=\"lowres, bad hands\""
+                "请提供提示词。\n"
+                f"{'/ynai <描述>' if translate else '/ynai0 <提示词>'}"
             )
             return
-
-        options, prompt = self._parse_options(args)
 
         blocked = self._nsfw_check(prompt)
         if blocked:
             yield event.plain_result(blocked)
             return
 
-        if options.get("translate"):
-            if not prompt:
-                yield event.plain_result("请提供要翻译的描述，例如：/nai -t 一个女孩在图书馆")
+        if translate:
+            if not self.config.get("llm_translation_enabled", True):
+                yield event.plain_result(
+                    "LLM 翻译 Tag 功能未启用，请管理员在插件配置中开启 "
+                    "llm_translation_enabled"
+                )
                 return
             yield event.plain_result("正在用 LLM 翻译 Tag...")
             ok, translated = await self._translate_to_tags(event, prompt)
@@ -367,10 +380,6 @@ class YesNAIPlugin(Star):
                 yield event.plain_result(blocked)
                 return
             prompt = translated
-
-        if not prompt:
-            yield event.plain_result("请提供提示词")
-            return
 
         try:
             artist_prompt = await self._get_selected_artist_prompt(event)
@@ -414,9 +423,10 @@ class YesNAIPlugin(Star):
             logger.exception("YesNAI 生图出现未预期错误")
             yield event.plain_result(f"生图失败: {exc}")
 
-    @filter.command("models")
-    async def models(self, event: AstrMessageEvent):
-        """查看可用模型列表"""
+    # ---------------------------------------------------------------
+    # 子命令
+    # ---------------------------------------------------------------
+    async def _ynai_model(self, event: AstrMessageEvent, args: str):
         try:
             client = self._get_client()
             models = await client.get_models()
@@ -431,13 +441,10 @@ class YesNAIPlugin(Star):
             logger.error(f"获取模型列表失败: {exc}")
             yield event.plain_result(f"获取模型列表失败: {exc}")
 
-    @filter.command("quote")
-    async def quote(self, event: AstrMessageEvent):
-        """生图前报价：/quote <prompt> [--model ...] [--size ...] ..."""
-        args = self._command_args(event)
+    async def _ynai_quote(self, event: AstrMessageEvent, args: str):
         if not args:
             yield event.plain_result(
-                "用法：/quote <提示词> [--model 模型] [--size 832x1216] "
+                "用法：/ynai quote <提示词> [--model 模型] [--size 832x1216] "
                 "[--steps 28] [--n 1]"
             )
             return
@@ -467,10 +474,7 @@ class YesNAIPlugin(Star):
             logger.error(f"报价失败: {exc}")
             yield event.plain_result(f"报价失败: {exc}")
 
-    @filter.command("artist")
-    async def artist(self, event: AstrMessageEvent):
-        """管理画师串：/artist list|set|add|del|clear"""
-        args = self._command_args(event)
+    async def _ynai_artist(self, event: AstrMessageEvent, args: str):
         parts = args.split(maxsplit=1)
         action = parts[0].lower() if parts else "list"
         rest = parts[1].strip() if len(parts) > 1 else ""
@@ -479,8 +483,9 @@ class YesNAIPlugin(Star):
             artists = self.config.get("artists", []) or []
             if not artists:
                 yield event.plain_result(
-                    "还没有画师串。\n添加：/artist add <名称> <画师串>\n"
-                    "选择：/artist set <名称>"
+                    "还没有画师串。\n"
+                    "添加：/ynai artist add <名称> <画师串>\n"
+                    "选择：/ynai artist set <名称>"
                 )
                 return
             selected = await self.get_kv_data(
@@ -496,14 +501,16 @@ class YesNAIPlugin(Star):
 
         elif action == "set":
             if not rest:
-                yield event.plain_result("用法：/artist set <名称>")
+                yield event.plain_result("用法：/ynai artist set <名称>")
                 return
             name = rest.strip()
             if not self._find_artist(name):
                 yield event.plain_result(f"没有找到画师串：{name}")
                 return
             await self.put_kv_data(f"artist:{event.unified_msg_origin}", name)
-            yield event.plain_result(f"已选择画师串：{name}（生图时自动拼接到提示词前面）")
+            yield event.plain_result(
+                f"已选择画师串：{name}（生图时自动拼接到提示词前面）"
+            )
 
         elif action == "clear":
             await self.delete_kv_data(f"artist:{event.unified_msg_origin}")
@@ -515,7 +522,7 @@ class YesNAIPlugin(Star):
                 return
             add_parts = rest.split(maxsplit=1)
             if len(add_parts) < 2:
-                yield event.plain_result("用法：/artist add <名称> <画师串>")
+                yield event.plain_result("用法：/ynai artist add <名称> <画师串>")
                 return
             name, prompt = add_parts[0], add_parts[1].strip()
             if not name or not prompt:
@@ -541,13 +548,11 @@ class YesNAIPlugin(Star):
                 yield event.plain_result("只有管理员可以删除画师串")
                 return
             if not rest:
-                yield event.plain_result("用法：/artist del <名称>")
+                yield event.plain_result("用法：/ynai artist del <名称>")
                 return
             name = rest.strip()
             artists = self.config.get("artists", []) or []
-            new_artists = [
-                a for a in artists if a.get("name") != name
-            ]
+            new_artists = [a for a in artists if a.get("name") != name]
             if len(new_artists) == len(artists):
                 yield event.plain_result(f"没有找到画师串：{name}")
                 return
@@ -556,12 +561,11 @@ class YesNAIPlugin(Star):
             yield event.plain_result(f"已删除画师串：{name}")
 
         else:
-            yield event.plain_result("未知子命令。可用：list / set / add / del / clear")
+            yield event.plain_result(
+                "未知子命令。可用：list / set / add / del / clear"
+            )
 
-    @filter.command("preset")
-    async def preset(self, event: AstrMessageEvent):
-        """查看/设置预设正反提示词：/preset show|positive|negative"""
-        args = self._command_args(event)
+    async def _ynai_preset(self, event: AstrMessageEvent, args: str):
         parts = args.split(maxsplit=1)
         action = parts[0].lower() if parts else "show"
         rest = parts[1].strip() if len(parts) > 1 else ""
@@ -573,7 +577,7 @@ class YesNAIPlugin(Star):
                 "当前预设：\n"
                 f"正面：{positive}\n"
                 f"负面：{negative}\n\n"
-                "设置：/preset positive <内容> 或 /preset negative <内容>"
+                "设置：/ynai preset positive <内容> 或 /ynai preset negative <内容>"
             )
 
         elif action in ("positive", "pos"):
@@ -581,7 +585,7 @@ class YesNAIPlugin(Star):
                 yield event.plain_result("只有管理员可以修改预设提示词")
                 return
             if not rest:
-                yield event.plain_result("用法：/preset positive <提示词>")
+                yield event.plain_result("用法：/ynai preset positive <提示词>")
                 return
             self.config["preset_positive_prompt"] = rest
             self.config.save_config()
@@ -592,19 +596,18 @@ class YesNAIPlugin(Star):
                 yield event.plain_result("只有管理员可以修改预设提示词")
                 return
             if not rest:
-                yield event.plain_result("用法：/preset negative <提示词>")
+                yield event.plain_result("用法：/ynai preset negative <提示词>")
                 return
             self.config["preset_negative_prompt"] = rest
             self.config.save_config()
             yield event.plain_result("已设置预设负面提示词")
 
         else:
-            yield event.plain_result("未知子命令。可用：show / positive / negative")
+            yield event.plain_result(
+                "未知子命令。可用：show / positive / negative"
+            )
 
-    @filter.command("nsfw")
-    async def nsfw(self, event: AstrMessageEvent):
-        """NSFW 开关：/nsfw on|off|status（on/off 仅管理员）"""
-        args = self._command_args(event)
+    async def _ynai_nsfw(self, event: AstrMessageEvent, args: str):
         action = args.strip().lower() if args.strip() else "status"
 
         if action == "status":
@@ -613,7 +616,7 @@ class YesNAIPlugin(Star):
             return
 
         if action not in ("on", "off"):
-            yield event.plain_result("用法：/nsfw on|off|status")
+            yield event.plain_result("用法：/ynai nsfw on|off|status")
             return
 
         if not self._is_admin(event):
@@ -622,14 +625,13 @@ class YesNAIPlugin(Star):
 
         self.config["nsfw_enabled"] = action == "on"
         self.config.save_config()
-        yield event.plain_result(f"NSFW 开关已{'开启' if action == 'on' else '关闭'}")
+        yield event.plain_result(
+            f"NSFW 开关已{'开启' if action == 'on' else '关闭'}"
+        )
 
-    @filter.command("tags")
-    async def tags(self, event: AstrMessageEvent):
-        """使用 YesNAI suggest-tags 工具获取推荐 Tag"""
-        args = self._command_args(event)
+    async def _ynai_tags(self, event: AstrMessageEvent, args: str):
         if not args:
-            yield event.plain_result("用法：/tags <描述> [--model 模型]")
+            yield event.plain_result("用法：/ynai tags <描述> [--model 模型]")
             return
 
         options, prompt = self._parse_options(args)
@@ -655,3 +657,54 @@ class YesNAIPlugin(Star):
         except Exception as exc:
             logger.error(f"获取 Tag 失败: {exc}")
             yield event.plain_result(f"获取 Tag 失败: {exc}")
+
+    # ---------------------------------------------------------------
+    # 指令入口
+    # ---------------------------------------------------------------
+    @filter.command("ynai")
+    async def ynai(self, event: AstrMessageEvent):
+        """YesNAI 主命令：/ynai <描述> 默认 LLM 翻译生图，/ynai model 等为子命令"""
+        args = self._command_args(event)
+        if not args:
+            yield event.plain_result(self._ynai_help_text())
+            return
+
+        first, _, rest = args.partition(" ")
+        sub = first.lower()
+        sub_args = rest.strip()
+
+        if sub in ("help", "h", "?"):
+            yield event.plain_result(self._ynai_help_text())
+        elif sub in ("model", "models", "m"):
+            async for result in self._ynai_model(event, sub_args):
+                yield result
+        elif sub in ("quote", "q"):
+            async for result in self._ynai_quote(event, sub_args):
+                yield result
+        elif sub in ("artist", "a"):
+            async for result in self._ynai_artist(event, sub_args):
+                yield result
+        elif sub in ("preset", "p"):
+            async for result in self._ynai_preset(event, sub_args):
+                yield result
+        elif sub in ("nsfw",):
+            async for result in self._ynai_nsfw(event, sub_args):
+                yield result
+        elif sub in ("tags", "t"):
+            async for result in self._ynai_tags(event, sub_args):
+                yield result
+        else:
+            async for result in self._ynai_generate(
+                event, args, translate=True
+            ):
+                yield result
+
+    @filter.command("ynai0")
+    async def ynai0(self, event: AstrMessageEvent):
+        """YesNAI 直接生图：/ynai0 <提示词>"""
+        args = self._command_args(event)
+        if not args:
+            yield event.plain_result("用法：/ynai0 <提示词> [--model ...] [--size ...] ...")
+            return
+        async for result in self._ynai_generate(event, args, translate=False):
+            yield result

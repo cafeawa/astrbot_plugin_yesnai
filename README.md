@@ -4,14 +4,14 @@
 
 ## 功能
 
-- ✅ `/nai <提示词>` 直接生图
-- ✅ `/nai -t <描述>` / `/nai --translate <描述>` 使用 AstrBot 当前会话 LLM 翻译成 Danbooru Tag 后生图
-- ✅ `/artist` 管理画师串，生图时自动拼接到提示词前面
-- ✅ `/preset` 查看/设置预设正反提示词
-- ✅ `/models` 查看可用模型
-- ✅ `/quote` 生图前报价
-- ✅ `/tags` 使用 API 的 suggest-tags 工具
-- ✅ `/nsfw` NSFW 开关（`on/off` 仅管理员）
+- ✅ `/ynai <描述>` 默认使用 LLM 翻译成 Danbooru Tag 后生图
+- ✅ `/ynai0 <提示词>` 直接生图（不做 LLM 翻译）
+- ✅ `/ynai artist` 管理画师串，生图时自动拼接到提示词前面
+- ✅ `/ynai preset` 查看/设置预设正反提示词
+- ✅ `/ynai nsfw` NSFW 开关（`on/off` 仅管理员）
+- ✅ `/ynai model` 查看可用模型
+- ✅ `/ynai quote` 生图前报价
+- ✅ `/ynai tags` 使用 API 的 suggest-tags 工具
 - ✅ 管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作
 - ✅ 完整封装 YesNAI 公开 API（生成、报价、模型、Vibe、放大、图像处理、标注、Native 兼容端点）
 
@@ -36,40 +36,41 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `timeout` | 请求超时时间（秒），默认 `120` |
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
-| `artists` | 画师串预设列表（也可用 `/artist add` 添加） |
+| `artists` | 画师串预设列表（也可用 `/ynai artist add` 添加） |
 | `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
-| `llm_system_prompt` | LLM 翻译 Tag 的系统提示词 |
+| `translation_llm` | 翻译 Tag 使用的 LLM；留空自动使用当前会话 LLM |
+| `translation_prompt` | 翻译 LLM 的翻译提示词（系统提示词） |
 
 ## 使用
+
+### LLM 翻译 Tag 后生图（默认）
+
+```
+/ynai 一个女孩在图书馆里看书
+/ynai 夕阳下的海边，一个少年在奔跑
+```
 
 ### 直接生图
 
 ```
-/nai 1girl, blue sky, masterpiece
-```
-
-### LLM 翻译 Tag 后生图
-
-```
-/nai -t 一个女孩在图书馆里看书
-/nai --translate 夕阳下的海边，一个少年在奔跑
+/ynai0 1girl, blue sky, masterpiece
 ```
 
 ### 可选生图参数
 
 ```
-/nai 1girl --model nai-diffusion-4-5-full --size 832x1216 --steps 28 --scale 5 --seed 123456789 --n 2 --sampler k_euler_ancestral --negative="lowres, bad hands"
+/ynai 一个女孩 --model nai-diffusion-4-5-full --size 832x1216 --steps 28 --scale 5 --seed 123456789 --n 2 --sampler k_euler_ancestral --negative="lowres, bad hands"
 ```
 
 ### 画师串
 
 ```
-/artist list
-/artist add my_artist artist_name, artist_style
-/artist set my_artist
-/artist clear
-/artist del my_artist
+/ynai artist list
+/ynai artist add my_artist artist_name, artist_style
+/ynai artist set my_artist
+/ynai artist clear
+/ynai artist del my_artist
 ```
 
 选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
@@ -81,17 +82,17 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 ### 预设正反提示词
 
 ```
-/preset show
-/preset positive masterpiece, best quality, absurdres
-/preset negative lowres, bad anatomy, bad hands
+/ynai preset show
+/ynai preset positive masterpiece, best quality, absurdres
+/ynai preset negative lowres, bad anatomy, bad hands
 ```
 
 ### NSFW
 
 ```
-/nsfw status
-/nsfw on    # 仅管理员
-/nsfw off   # 仅管理员
+/ynai nsfw status
+/ynai nsfw on    # 仅管理员
+/ynai nsfw off   # 仅管理员
 ```
 
 > 默认关闭 NSFW。关闭时，插件会拦截包含 `nude`、`naked`、`sex`、`nsfw` 等关键词的生成请求。
@@ -99,9 +100,10 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 ### 其他
 
 ```
-/models
-/quote 1girl --size 832x1216 --steps 28
-/tags 一个女孩
+/ynai model
+/ynai quote 1girl --size 832x1216 --steps 28
+/ynai tags 一个女孩
+/ynai help
 ```
 
 ## 目录结构
