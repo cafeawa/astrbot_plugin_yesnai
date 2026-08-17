@@ -59,6 +59,12 @@
       }
     }
   },
+  "nsfw_enabled": {
+    "description": "是否允许 NSFW 内容",
+    "type": "bool",
+    "default": false,
+    "hint": "关闭时，检测到 NSFW 关键词会拒绝生图；开启后不拦截。管理员可通过 /nsfw 命令切换"
+  },
   "llm_translation_enabled": {
     "description": "是否启用 LLM 翻译 Tag 生成",
     "type": "bool",

@@ -11,6 +11,8 @@
 - ✅ `/models` 查看可用模型
 - ✅ `/quote` 生图前报价
 - ✅ `/tags` 使用 API 的 suggest-tags 工具
+- ✅ `/nsfw` NSFW 开关（`on/off` 仅管理员）
+- ✅ 管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作
 - ✅ 完整封装 YesNAI 公开 API（生成、报价、模型、Vibe、放大、图像处理、标注、Native 兼容端点）
 
 ## 安装
@@ -35,6 +37,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
 | `artists` | 画师串预设列表（也可用 `/artist add` 添加） |
+| `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
 | `llm_system_prompt` | LLM 翻译 Tag 的系统提示词 |
 
@@ -82,6 +85,16 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 /preset positive masterpiece, best quality, absurdres
 /preset negative lowres, bad anatomy, bad hands
 ```
+
+### NSFW
+
+```
+/nsfw status
+/nsfw on    # 仅管理员
+/nsfw off   # 仅管理员
+```
+
+> 默认关闭 NSFW。关闭时，插件会拦截包含 `nude`、`naked`、`sex`、`nsfw` 等关键词的生成请求。
 
 ### 其他
 

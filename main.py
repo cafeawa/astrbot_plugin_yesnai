@@ -5,9 +5,12 @@
 - /nai -t <描述> 或 /nai --translate <描述> 使用 AstrBot 当前 LLM 翻译为 Danbooru Tag 后生图
 - /artist 管理画师串，生图时自动拼接到提示词前面
 - /preset 查看/设置预设正反提示词
+- /nsfw 查看/切换 NSFW 开关（on/off 仅管理员）
 - /models 查看可用模型
 - /quote 生图前报价
 - /tags 使用 API 的 suggest-tags 工具
+
+管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作。
 """
 
 from __future__ import annotations
@@ -31,7 +34,24 @@ _COMMAND_NAMES = {
     "artist",
     "preset",
     "tags",
+    "nsfw",
 }
+
+_NSFW_KEYWORDS = (
+    "nsfw",
+    "nude",
+    "nudity",
+    "naked",
+    "sex",
+    "sexual",
+    "erotic",
+    "explicit",
+    "hentai",
+    "porn",
+    "porno",
+    "pornographic",
+    "xxx",
+)
 
 
 @register(
@@ -63,6 +83,29 @@ class YesNAIPlugin(Star):
         if parts and parts[0].lstrip("/").lower() in _COMMAND_NAMES:
             return parts[1].strip() if len(parts) > 1 else ""
         return text
+
+    @staticmethod
+    def _is_admin(event: AstrMessageEvent) -> bool:
+        try:
+            return bool(event.is_admin())
+        except Exception:
+            return False
+
+    @staticmethod
+    def _nsfw_blocked(text: str) -> bool:
+        lower = text.lower()
+        return any(keyword in lower for keyword in _NSFW_KEYWORDS)
+
+    def _nsfw_check(self, text: str) -> str | None:
+        """NSFW 关闭时返回拦截文案；开启或未命中返回 None。"""
+        if self.config.get("nsfw_enabled", False):
+            return None
+        if self._nsfw_blocked(text):
+            return (
+                "当前未开启 NSFW，已拦截该请求。\n"
+                "如确需生成，请联系管理员发送 /nsfw on 开启。"
+            )
+        return None
 
     def _get_client(self) -> YesNAIClient:
         return YesNAIClient(
@@ -305,6 +348,11 @@ class YesNAIPlugin(Star):
 
         options, prompt = self._parse_options(args)
 
+        blocked = self._nsfw_check(prompt)
+        if blocked:
+            yield event.plain_result(blocked)
+            return
+
         if options.get("translate"):
             if not prompt:
                 yield event.plain_result("请提供要翻译的描述，例如：/nai -t 一个女孩在图书馆")
@@ -313,6 +361,10 @@ class YesNAIPlugin(Star):
             ok, translated = await self._translate_to_tags(event, prompt)
             if not ok:
                 yield event.plain_result(translated)
+                return
+            blocked = self._nsfw_check(translated)
+            if blocked:
+                yield event.plain_result(blocked)
                 return
             prompt = translated
 
@@ -458,6 +510,9 @@ class YesNAIPlugin(Star):
             yield event.plain_result("已清除当前画师串选择")
 
         elif action == "add":
+            if not self._is_admin(event):
+                yield event.plain_result("只有管理员可以添加/修改画师串")
+                return
             add_parts = rest.split(maxsplit=1)
             if len(add_parts) < 2:
                 yield event.plain_result("用法：/artist add <名称> <画师串>")
@@ -482,6 +537,9 @@ class YesNAIPlugin(Star):
             yield event.plain_result(f"已保存画师串：{name}")
 
         elif action == "del":
+            if not self._is_admin(event):
+                yield event.plain_result("只有管理员可以删除画师串")
+                return
             if not rest:
                 yield event.plain_result("用法：/artist del <名称>")
                 return
@@ -519,6 +577,9 @@ class YesNAIPlugin(Star):
             )
 
         elif action in ("positive", "pos"):
+            if not self._is_admin(event):
+                yield event.plain_result("只有管理员可以修改预设提示词")
+                return
             if not rest:
                 yield event.plain_result("用法：/preset positive <提示词>")
                 return
@@ -527,6 +588,9 @@ class YesNAIPlugin(Star):
             yield event.plain_result("已设置预设正面提示词")
 
         elif action in ("negative", "neg"):
+            if not self._is_admin(event):
+                yield event.plain_result("只有管理员可以修改预设提示词")
+                return
             if not rest:
                 yield event.plain_result("用法：/preset negative <提示词>")
                 return
@@ -536,6 +600,29 @@ class YesNAIPlugin(Star):
 
         else:
             yield event.plain_result("未知子命令。可用：show / positive / negative")
+
+    @filter.command("nsfw")
+    async def nsfw(self, event: AstrMessageEvent):
+        """NSFW 开关：/nsfw on|off|status（on/off 仅管理员）"""
+        args = self._command_args(event)
+        action = args.strip().lower() if args.strip() else "status"
+
+        if action == "status":
+            state = "开启" if self.config.get("nsfw_enabled", False) else "关闭"
+            yield event.plain_result(f"当前 NSFW 开关：{state}")
+            return
+
+        if action not in ("on", "off"):
+            yield event.plain_result("用法：/nsfw on|off|status")
+            return
+
+        if not self._is_admin(event):
+            yield event.plain_result("只有管理员可以修改 NSFW 开关")
+            return
+
+        self.config["nsfw_enabled"] = action == "on"
+        self.config.save_config()
+        yield event.plain_result(f"NSFW 开关已{'开启' if action == 'on' else '关闭'}")
 
     @filter.command("tags")
     async def tags(self, event: AstrMessageEvent):
