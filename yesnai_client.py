@@ -37,10 +37,11 @@ class YesNAIClient:
         self.api_token = api_token
         self.timeout = timeout
 
-    def _headers(self) -> dict[str, str]:
+    def _headers(self, token: str | None = None) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
-        if self.api_token:
-            headers["Authorization"] = f"Bearer {self.api_token}"
+        auth_token = token if token is not None else self.api_token
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
         return headers
 
     def _url(self, path: str) -> str:
@@ -56,6 +57,34 @@ class YesNAIClient:
                 method,
                 self._url(path),
                 headers=self._headers(),
+                **kwargs,
+            ) as resp:
+                body = await resp.text()
+                if resp.status >= 400:
+                    raise YesNAIError(
+                        f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
+                    )
+                try:
+                    return json.loads(body)
+                except json.JSONDecodeError as exc:
+                    raise YesNAIError(
+                        f"{method} {path} 返回非 JSON 响应: {body[:500]}"
+                    ) from exc
+
+    async def _request_json_with_token(
+        self,
+        method: str,
+        path: str,
+        token: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=self.timeout)
+        ) as session:
+            async with session.request(
+                method,
+                self._url(path),
+                headers=self._headers(token),
                 **kwargs,
             ) as resp:
                 body = await resp.text()
@@ -215,6 +244,24 @@ class YesNAIClient:
             "GET",
             "/ai/generate-image/suggest-tags",
             params={"prompt": prompt, "model": model},
+        )
+
+    # ---- Playground（登录 JWT）端点 ----
+    async def playground_quote(
+        self, jwt_token: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._request_json_with_token(
+            "POST", "/api/ynai/playground/quote", jwt_token, json=payload
+        )
+
+    async def playground_generate(
+        self, jwt_token: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        return await self._request_json_with_token(
+            "POST",
+            "/api/ynai/playground/images/generations",
+            jwt_token,
+            json=payload,
         )
 
     # ---- Native 兼容端点 ----
