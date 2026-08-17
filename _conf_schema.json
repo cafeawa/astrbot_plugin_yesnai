@@ -1,0 +1,26 @@
+{
+  "api_base": {
+    "description": "YesNAI API 基础地址",
+    "type": "string",
+    "default": "https://nai.rinko.ai",
+    "hint": "一般不需要修改，默认使用 https://nai.rinko.ai"
+  },
+  "api_token": {
+    "description": "YesNAI API Token",
+    "type": "string",
+    "default": "",
+    "hint": "在控制台 API Keys 页面创建，格式为 ynai-..."
+  },
+  "default_model": {
+    "description": "默认生图模型",
+    "type": "string",
+    "default": "nai-diffusion-4-5-full",
+    "hint": "可用模型可调用 GET /v1/models 查看"
+  },
+  "timeout": {
+    "description": "请求超时时间（秒）",
+    "type": "int",
+    "default": 120,
+    "hint": "生图通常较慢，建议不要设置太短"
+  }
+}

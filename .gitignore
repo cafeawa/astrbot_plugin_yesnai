@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[codz]
+*$py.class
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+
+# AstrBot runtime data
+data/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
