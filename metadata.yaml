@@ -5,4 +5,4 @@ short_desc: 通过 YesNAI API 生成 NovelAI 风格图像。
 version: v0.1.0
 author: cafe_awa_
 repo: https://github.com/cafe_awa_/astrbot_plugin_yesnai # TODO: 改成你的实际仓库地址
-# astrbot_version: ">=4.16"
+astrbot_version: ">=4.16"
