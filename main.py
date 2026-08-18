@@ -45,7 +45,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.4.0",
+    "0.6.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -54,6 +54,7 @@ class YesNAIPlugin(Star):
 
     async def initialize(self):
         logger.info("YesNAI 生图插件已初始化")
+        self._migrate_artists_storage()
         if not self.config.get("api_token"):
             logger.warning("YesNAI 插件尚未配置 API Token，请到插件配置中填写")
 
@@ -213,27 +214,59 @@ class YesNAIPlugin(Star):
             return str(artist.get("prompt", "")).strip()
         return ""
 
-    def _normalize_artists(self) -> list[dict[str, Any]]:
-        """为缺少 id 的画师串自动生成数字 id（1,2,3...）。"""
-        artists = self.config.get("artists", []) or []
-        max_id = 0
-        for artist in artists:
-            raw_id = artist.get("id")
-            if raw_id is not None and str(raw_id).strip().isdigit():
-                max_id = max(max_id, int(str(raw_id).strip()))
-        next_id = max_id + 1
-        changed = False
-        for artist in artists:
-            if not artist.get("id"):
-                artist["id"] = str(next_id)
-                next_id += 1
-                changed = True
-        if changed:
-            self.config["artists"] = artists
+    def _artists_to_storage(self, artists: list[dict[str, Any]]) -> list[str]:
+        """把画师串列表保存为 WebUI 可编辑的字符串列表：名称||画师串。"""
+        return [
+            f"{a.get('name', '')}||{a.get('prompt', '')}" for a in artists
+        ]
+
+    def _migrate_artists_storage(self) -> None:
+        """把旧的 dict 列表迁移成字符串列表，保证 WebUI 的 list 编辑器可用。"""
+        raw = self.config.get("artists", []) or []
+        if any(isinstance(item, dict) for item in raw):
+            artists = self._normalize_artists()
+            self.config["artists"] = self._artists_to_storage(artists)
             try:
                 self.config.save_config()
             except Exception:
                 pass
+
+    def _normalize_artists(self) -> list[dict[str, Any]]:
+        """解析配置中的画师串（支持字符串列表和旧 dict 列表），自动生成数字 id。"""
+        raw = self.config.get("artists", []) or []
+        artists: list[dict[str, Any]] = []
+        for item in raw:
+            if isinstance(item, dict):
+                artists.append(
+                    {
+                        "id": str(item.get("id") or ""),
+                        "name": str(item.get("name") or ""),
+                        "prompt": str(item.get("prompt") or ""),
+                    }
+                )
+            else:
+                text = str(item)
+                if "||" in text:
+                    name, prompt = text.split("||", 1)
+                else:
+                    name, prompt = text, text
+                artists.append(
+                    {
+                        "id": "",
+                        "name": name.strip(),
+                        "prompt": prompt.strip(),
+                    }
+                )
+
+        max_id = 0
+        for artist in artists:
+            if artist["id"].strip().isdigit():
+                max_id = max(max_id, int(artist["id"].strip()))
+        next_id = max_id + 1
+        for artist in artists:
+            if not artist["id"].strip():
+                artist["id"] = str(next_id)
+                next_id += 1
         return artists
 
     def _find_artist(self, artist_id: str) -> dict[str, Any] | None:
@@ -571,7 +604,7 @@ class YesNAIPlugin(Star):
                         "prompt": prompt,
                     }
                 )
-            self.config["artists"] = artists
+            self.config["artists"] = self._artists_to_storage(artists)
             self.config.save_config()
             artist_id = next(
                 (
@@ -603,7 +636,7 @@ class YesNAIPlugin(Star):
             if not removed:
                 yield event.plain_result(f"没有找到画师串：{artist_id}")
                 return
-            self.config["artists"] = new_artists
+            self.config["artists"] = self._artists_to_storage(new_artists)
             self.config.save_config()
             yield event.plain_result(f"已删除画师串：{artist_id}")
 

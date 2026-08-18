@@ -36,33 +36,13 @@
     "hint": "生成时会作为 negative_prompt 传入"
   },
   "artists": {
-    "type": "template_list",
+    "type": "list",
     "description": "画师串预设列表",
-    "hint": "在这里添加常用画师串，也可以在聊天中使用 /ynai artist add 添加",
-    "templates": {
-      "artist": {
-        "name": "画师串",
-        "hint": "添加一个画师串预设",
-        "display_item": "name",
-        "items": {
-          "id": {
-            "description": "画师串唯一 ID（留空自动生成，建议使用数字）",
-            "type": "string",
-            "default": ""
-          },
-          "name": {
-            "description": "画师串预设名",
-            "type": "string",
-            "default": ""
-          },
-          "prompt": {
-            "description": "画师串具体内容（生图时自动拼接到提示词前面）",
-            "type": "text",
-            "default": ""
-          }
-        }
-      }
-    }
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "每项格式：名称||画师串，例如 我的画师||artist_name, artist_style。ID 按列表顺序自动生成 1、2、3...；也可用 /ynai artist add 添加"
   },
   "nsfw_enabled": {
     "description": "是否允许 NSFW 内容",

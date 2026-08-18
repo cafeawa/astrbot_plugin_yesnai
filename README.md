@@ -36,7 +36,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `timeout` | 请求超时时间（秒），默认 `120` |
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
-| `artists` | 画师串预设列表，每项包含 `id`、`name`、`prompt`（也可用 `/ynai artist add` 添加） |
+| `artists` | 画师串预设列表，每项格式 `名称\|\|画师串`，ID 按顺序自动生成（也可用 `/ynai artist add` 添加） |
 | `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
 | `translation_llm` | 翻译 Tag 使用的 LLM；留空自动使用当前会话 LLM |
@@ -73,7 +73,15 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 /ynai artist del 1
 ```
 
-画师串由三部分组成：`ID`（唯一标识，程序自动生成 1、2、3...）、`名称`（展示名）、`内容`（具体画师串）。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
+画师串由三部分组成：`ID`（唯一标识，程序自动生成 1、2、3...）、`名称`（展示名）、`内容`（具体画师串）。
+
+在 WebUI 配置里添加时，每行填：`名称||画师串`，例如：
+
+```
+我的画师||artist_name, artist_style
+```
+
+ID 会自动按列表顺序生成。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
 
 ```
 画师串, 预设正面提示词, 用户提示词
