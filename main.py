@@ -16,7 +16,9 @@
 from __future__ import annotations
 
 import base64
+import os
 import shlex
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -24,6 +26,12 @@ from typing import Any
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
+
+# AstrBot 加载 main.py 时不一定把插件目录加入 sys.path，
+# 这里手动加入，确保同目录的 yesnai_client.py 可以被导入。
+_PLUGIN_DIR = os.path.dirname(os.path.abspath(__file__))
+if _PLUGIN_DIR not in sys.path:
+    sys.path.insert(0, _PLUGIN_DIR)
 
 from yesnai_client import YesNAIClient, YesNAIError
 
