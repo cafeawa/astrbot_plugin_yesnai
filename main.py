@@ -45,7 +45,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.6.0",
+    "0.6.1",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -194,6 +194,12 @@ class YesNAIPlugin(Star):
                 pass
         if options.get("sampler"):
             params["sampler"] = str(options["sampler"])
+
+        # YesNAI API 强制要求这些字段，用户未指定时使用默认值
+        params.setdefault("width", 832)
+        params.setdefault("height", 1216)
+        params.setdefault("steps", 28)
+        params.setdefault("n_samples", 1)
         return params
 
     def _compose_negative_prompt(self, options: dict[str, Any]) -> str:
