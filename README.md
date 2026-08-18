@@ -9,6 +9,7 @@
 - ✅ `/ynai artist` 管理画师串，生图时自动拼接到提示词前面
 - ✅ `/ynai preset` 查看/设置预设正反提示词（仅管理员）
 - ✅ `/ynai nsfw` NSFW 开关（`on/off` 仅管理员）
+- ✅ Agent 工具 `ynai_generate`：LLM 传入 tags，使用默认生图配置生图并发送
 - ✅ `/ynai model` 查看可用模型
 - ✅ 管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作
 - ✅ 完整封装 YesNAI 公开 API（生成、报价、模型、Vibe、放大、图像处理、标注、Native 兼容端点）

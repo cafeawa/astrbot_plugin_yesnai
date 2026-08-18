@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import shlex
 import sys
@@ -43,7 +44,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.7.5",
+    "0.8.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -590,6 +591,92 @@ class YesNAIPlugin(Star):
         except Exception as exc:
             logger.exception("YesNAI 生图出现未预期错误")
             yield event.plain_result(f"生图失败: {exc}")
+
+    @filter.llm_tool(name="ynai_generate")
+    async def ynai_generate_tool(
+        self,
+        event: AstrMessageEvent,
+        tags: str = "",
+        **kwargs,
+    ) -> str:
+        """使用默认生图配置生成图片并发送到当前会话。只需要提供 Danbooru tags。
+
+        Args:
+            tags(string): 逗号分隔的 Danbooru tag 列表，例如 "1girl, blue sky, masterpiece"。
+        """
+        tags = (tags or "").strip()
+        if not tags:
+            return json.dumps(
+                {"status": "error", "message": "缺少 tags 参数，请提供逗号分隔的 Danbooru tag"},
+                ensure_ascii=False,
+            )
+
+        try:
+            artist_prompt = await self._get_selected_artist_prompt(event)
+            final_prompt = self._compose_positive_prompt(tags, artist_prompt)
+            negative = self._compose_negative_prompt({})
+            params = self._build_parameters({})
+            if negative:
+                params["negative_prompt"] = negative
+
+            model = str(
+                self.config.get("default_model", "nai-diffusion-4-5-full")
+            )
+            client = self._get_client()
+            resp = await client.generate_image(
+                model=model,
+                input_text=final_prompt,
+                parameters=params,
+            )
+            images = resp.get("images") or []
+            if not images:
+                return json.dumps(
+                    {"status": "error", "message": "生图接口未返回图片"},
+                    ensure_ascii=False,
+                )
+
+            fmt = str(resp.get("image_format", "png"))
+            paths = self._save_images(images, fmt)
+            job = resp.get("job", {})
+            cost = job.get("cost_gems", "?")
+
+            from astrbot.api.message_components import Image, Plain
+
+            chain: list = [Plain(f"生成完成，消耗 {cost} Gems")]
+            for path in paths:
+                chain.append(Image.fromFileSystem(str(path)))
+
+            sent = False
+            try:
+                await event.send(event.chain_result(chain))
+                sent = True
+            except Exception:
+                try:
+                    from astrbot.api.event import MessageEventResult
+
+                    await event.send(MessageEventResult(chain=chain))
+                    sent = True
+                except Exception as exc:
+                    logger.error(f"ynai_generate 工具图片发送失败: {exc}")
+
+            return json.dumps(
+                {
+                    "status": "success" if sent else "delivery_failed",
+                    "success": bool(sent),
+                    "generated": True,
+                    "sent": sent,
+                    "images": len(paths),
+                    "cost_gems": cost,
+                    "message": "图片已发送" if sent else "图片已生成但发送失败",
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            logger.error(f"ynai_generate 工具生图失败: {exc}")
+            return json.dumps(
+                {"status": "error", "message": f"生图失败: {exc}"},
+                ensure_ascii=False,
+            )
 
     # ---------------------------------------------------------------
     # 子命令
