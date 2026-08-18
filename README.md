@@ -33,7 +33,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `api_base` | YesNAI API 基础地址，默认 `https://nai.rinko.ai` |
 | `api_token` | 你的 API Token，格式 `ynai-...`，在控制台 API Keys 页面创建 |
 | `default_model` | 默认生图模型，如 `nai-diffusion-4-5-full` |
-| `timeout` | 请求超时时间（秒），默认 `120` |
+| `timeout` | 请求超时时间（秒），默认 `600`，生图慢时可调大 |
 | `default_width` | 默认生图宽度，默认 `832` |
 | `default_height` | 默认生图高度，默认 `1216` |
 | `default_steps` | 默认采样步数，默认 `28` |

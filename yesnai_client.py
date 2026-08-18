@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 from typing import Any
@@ -50,26 +51,34 @@ class YesNAIClient:
     async def _request_json(
         self, method: str, path: str, **kwargs: Any
     ) -> dict[str, Any]:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.request(
-                method,
-                self._url(path),
-                headers=self._headers(),
-                **kwargs,
-            ) as resp:
-                body = await resp.text()
-                if resp.status >= 400:
-                    raise YesNAIError(
-                        f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
-                    )
-                try:
-                    return json.loads(body)
-                except json.JSONDecodeError as exc:
-                    raise YesNAIError(
-                        f"{method} {path} 返回非 JSON 响应: {body[:500]}"
-                    ) from exc
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as session:
+                async with session.request(
+                    method,
+                    self._url(path),
+                    headers=self._headers(),
+                    **kwargs,
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status >= 400:
+                        raise YesNAIError(
+                            f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
+                        )
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError as exc:
+                        raise YesNAIError(
+                            f"{method} {path} 返回非 JSON 响应: {body[:500]}"
+                        ) from exc
+        except asyncio.TimeoutError as exc:
+            raise YesNAIError(
+                f"{method} {path} 请求超时（{self.timeout}s），"
+                "请调大插件配置里的 timeout"
+            ) from exc
+        except aiohttp.ClientError as exc:
+            raise YesNAIError(f"{method} {path} 网络错误: {exc}") from exc
 
     async def _request_json_with_token(
         self,
@@ -78,47 +87,63 @@ class YesNAIClient:
         token: str,
         **kwargs: Any,
     ) -> dict[str, Any]:
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.request(
-                method,
-                self._url(path),
-                headers=self._headers(token),
-                **kwargs,
-            ) as resp:
-                body = await resp.text()
-                if resp.status >= 400:
-                    raise YesNAIError(
-                        f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
-                    )
-                try:
-                    return json.loads(body)
-                except json.JSONDecodeError as exc:
-                    raise YesNAIError(
-                        f"{method} {path} 返回非 JSON 响应: {body[:500]}"
-                    ) from exc
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as session:
+                async with session.request(
+                    method,
+                    self._url(path),
+                    headers=self._headers(token),
+                    **kwargs,
+                ) as resp:
+                    body = await resp.text()
+                    if resp.status >= 400:
+                        raise YesNAIError(
+                            f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
+                        )
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError as exc:
+                        raise YesNAIError(
+                            f"{method} {path} 返回非 JSON 响应: {body[:500]}"
+                        ) from exc
+        except asyncio.TimeoutError as exc:
+            raise YesNAIError(
+                f"{method} {path} 请求超时（{self.timeout}s），"
+                "请调大插件配置里的 timeout"
+            ) from exc
+        except aiohttp.ClientError as exc:
+            raise YesNAIError(f"{method} {path} 网络错误: {exc}") from exc
 
     async def _request_bytes(
         self, method: str, path: str, **kwargs: Any
     ) -> tuple[bytes, str]:
         """请求二进制接口，返回 (body, content_type)。"""
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.request(
-                method,
-                self._url(path),
-                headers=self._headers(),
-                **kwargs,
-            ) as resp:
-                body = await resp.read()
-                if resp.status >= 400:
-                    raise YesNAIError(
-                        f"{method} {path} 失败: HTTP {resp.status} - "
-                        f"{body[:500].decode('utf-8', errors='ignore')}"
-                    )
-                return body, resp.headers.get("Content-Type", "")
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as session:
+                async with session.request(
+                    method,
+                    self._url(path),
+                    headers=self._headers(),
+                    **kwargs,
+                ) as resp:
+                    body = await resp.read()
+                    if resp.status >= 400:
+                        raise YesNAIError(
+                            f"{method} {path} 失败: HTTP {resp.status} - "
+                            f"{body[:500].decode('utf-8', errors='ignore')}"
+                        )
+                    return body, resp.headers.get("Content-Type", "")
+        except asyncio.TimeoutError as exc:
+            raise YesNAIError(
+                f"{method} {path} 请求超时（{self.timeout}s），"
+                "请调大插件配置里的 timeout"
+            ) from exc
+        except aiohttp.ClientError as exc:
+            raise YesNAIError(f"{method} {path} 网络错误: {exc}") from exc
 
     async def get_models(self) -> list[dict[str, Any]]:
         data = await self._request_json("GET", "/v1/models")

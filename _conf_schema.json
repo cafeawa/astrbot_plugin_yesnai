@@ -20,8 +20,8 @@
   "timeout": {
     "description": "请求超时时间（秒）",
     "type": "int",
-    "default": 120,
-    "hint": "生图通常较慢，建议不要设置太短"
+    "default": 600,
+    "hint": "生图可能较慢，建议 300-600 秒"
   },
   "default_width": {
     "description": "默认生图宽度",

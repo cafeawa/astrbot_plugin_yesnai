@@ -45,7 +45,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.6.3",
+    "0.6.4",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -105,7 +105,7 @@ class YesNAIPlugin(Star):
         return YesNAIClient(
             api_base=str(self.config.get("api_base", "https://nai.rinko.ai")),
             api_token=str(self.config.get("api_token", "")),
-            timeout=int(self.config.get("timeout", 120) or 120),
+            timeout=int(self.config.get("timeout", 600) or 600),
         )
 
     @staticmethod
