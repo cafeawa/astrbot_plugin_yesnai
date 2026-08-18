@@ -36,7 +36,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `timeout` | 请求超时时间（秒），默认 `120` |
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
-| `artists` | 画师串预设列表（也可用 `/ynai artist add` 添加） |
+| `artists` | 画师串预设列表，每项包含 `id`、`name`、`prompt`（也可用 `/ynai artist add` 添加） |
 | `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
 | `translation_llm` | 翻译 Tag 使用的 LLM；留空自动使用当前会话 LLM |
@@ -67,13 +67,13 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 
 ```
 /ynai artist list
-/ynai artist add my_artist artist_name, artist_style
+/ynai artist add my_artist 我的画师 artist_name, artist_style
 /ynai artist set my_artist
 /ynai artist clear
 /ynai artist del my_artist
 ```
 
-选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
+画师串由三部分组成：`ID`（唯一标识）、`名称`（展示名）、`内容`（具体画师串）。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
 
 ```
 画师串, 预设正面提示词, 用户提示词
@@ -95,7 +95,9 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 /ynai nsfw off   # 仅管理员
 ```
 
-> 默认关闭 NSFW。关闭时，插件会拦截包含 `nude`、`naked`、`sex`、`nsfw` 等关键词的生成请求。
+> NSFW 开关不再拦截关键词，而是通过 Tag 控制：
+> - 关闭（安全模式）：正面提示词自动添加 `sfw`，负面提示词自动添加 `nsfw`
+> - 开启（NSFW 模式）：正面提示词自动添加 `nsfw`，负面提示词自动添加 `sfw`
 
 ### 其他
 

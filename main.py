@@ -40,28 +40,12 @@ _COMMAND_NAMES = {
     "ynai0",
 }
 
-_NSFW_KEYWORDS = (
-    "nsfw",
-    "nude",
-    "nudity",
-    "naked",
-    "sex",
-    "sexual",
-    "erotic",
-    "explicit",
-    "hentai",
-    "porn",
-    "porno",
-    "pornographic",
-    "xxx",
-)
-
 
 @register(
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.2.0",
+    "0.3.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -95,20 +79,26 @@ class YesNAIPlugin(Star):
             return False
 
     @staticmethod
-    def _nsfw_blocked(text: str) -> bool:
-        lower = text.lower()
-        return any(keyword in lower for keyword in _NSFW_KEYWORDS)
+    def _ensure_tag(text: str, tag: str) -> str:
+        """把 tag 追加到逗号分隔的提示词中，已存在则不重复添加。"""
+        if not text:
+            return tag
+        tags = [t.strip() for t in text.split(",") if t.strip()]
+        if tag.lower() not in {t.lower() for t in tags}:
+            tags.append(tag)
+        return ", ".join(tags)
 
-    def _nsfw_check(self, text: str) -> str | None:
-        """NSFW 关闭时返回拦截文案；开启或未命中返回 None。"""
+    def _apply_nsfw_positive(self, prompt: str) -> str:
+        """根据 NSFW 开关在正面提示词中添加 nsfw/sfw。"""
         if self.config.get("nsfw_enabled", False):
-            return None
-        if self._nsfw_blocked(text):
-            return (
-                "当前未开启 NSFW，已拦截该请求。\n"
-                "如确需生成，请联系管理员发送 /ynai nsfw on 开启。"
-            )
-        return None
+            return self._ensure_tag(prompt, "nsfw")
+        return self._ensure_tag(prompt, "sfw")
+
+    def _apply_nsfw_negative(self, prompt: str) -> str:
+        """根据 NSFW 开关在负面提示词中添加 nsfw/sfw。"""
+        if self.config.get("nsfw_enabled", False):
+            return self._ensure_tag(prompt, "sfw")
+        return self._ensure_tag(prompt, "nsfw")
 
     def _get_client(self) -> YesNAIClient:
         return YesNAIClient(
@@ -209,21 +199,25 @@ class YesNAIPlugin(Star):
         preset = str(self.config.get("preset_negative_prompt", "")).strip()
         extra = str(options.get("negative", "")).strip()
         if preset and extra:
-            return f"{preset}, {extra}"
-        return preset or extra
+            result = f"{preset}, {extra}"
+        else:
+            result = preset or extra
+        return self._apply_nsfw_negative(result)
 
     async def _get_selected_artist_prompt(self, event: AstrMessageEvent) -> str:
-        name = await self.get_kv_data(f"artist:{event.unified_msg_origin}", None)
-        if not name:
+        artist_id = await self.get_kv_data(f"artist:{event.unified_msg_origin}", None)
+        if not artist_id:
             return ""
-        for artist in self.config.get("artists", []) or []:
-            if artist.get("name") == name:
-                return str(artist.get("prompt", "")).strip()
+        artist = self._find_artist(artist_id)
+        if artist:
+            return str(artist.get("prompt", "")).strip()
         return ""
 
-    def _find_artist(self, name: str) -> dict[str, Any] | None:
+    def _find_artist(self, artist_id: str) -> dict[str, Any] | None:
         for artist in self.config.get("artists", []) or []:
-            if artist.get("name") == name:
+            # 兼容旧数据：没有 id 时用 name 当作 id
+            aid = str(artist.get("id") or artist.get("name") or "")
+            if aid == artist_id or artist.get("name") == artist_id:
                 return artist
         return None
 
@@ -236,7 +230,7 @@ class YesNAIPlugin(Star):
             parts.append(preset)
         if prompt:
             parts.append(prompt)
-        return ", ".join(parts)
+        return self._apply_nsfw_positive(", ".join(parts))
 
     async def _translate_to_tags(
         self, event: AstrMessageEvent, text: str
@@ -343,7 +337,7 @@ class YesNAIPlugin(Star):
             "/ynai0 <提示词>              直接生图\n"
             "/ynai model                  查看可用模型\n"
             "/ynai quote <描述>            生图前报价\n"
-            "/ynai artist list/set/add/del/clear  管理画师串\n"
+            "/ynai artist list/set/add/del/clear  管理画师串（add 需 ID/名称/内容）\n"
             "/ynai preset show/positive/negative  预设正反提示词\n"
             "/ynai nsfw on/off/status     NSFW 开关\n"
             "/ynai tags <描述>             获取推荐 Tag\n\n"
@@ -366,11 +360,6 @@ class YesNAIPlugin(Star):
             )
             return
 
-        blocked = self._nsfw_check(prompt)
-        if blocked:
-            yield event.plain_result(blocked)
-            return
-
         if translate:
             if not self.config.get("llm_translation_enabled", True):
                 yield event.plain_result(
@@ -382,10 +371,6 @@ class YesNAIPlugin(Star):
             ok, translated = await self._translate_to_tags(event, prompt)
             if not ok:
                 yield event.plain_result(translated)
-                return
-            blocked = self._nsfw_check(translated)
-            if blocked:
-                yield event.plain_result(blocked)
                 return
             prompt = translated
 
@@ -492,8 +477,8 @@ class YesNAIPlugin(Star):
             if not artists:
                 yield event.plain_result(
                     "还没有画师串。\n"
-                    "添加：/ynai artist add <名称> <画师串>\n"
-                    "选择：/ynai artist set <名称>"
+                    "添加：/ynai artist add <ID> <名称> <画师串>\n"
+                    "选择：/ynai artist set <ID>"
                 )
                 return
             selected = await self.get_kv_data(
@@ -501,23 +486,24 @@ class YesNAIPlugin(Star):
             )
             lines = []
             for artist_item in artists:
-                name = str(artist_item.get("name", "?"))
-                mark = "✔" if name == selected else " "
+                aid = str(artist_item.get("id") or artist_item.get("name") or "?")
+                name = str(artist_item.get("name", ""))
+                mark = "✔" if aid == selected else " "
                 prompt = str(artist_item.get("prompt", ""))[:60]
-                lines.append(f"{mark} {name}: {prompt}")
+                lines.append(f"{mark} [{aid}] {name}: {prompt}")
             yield event.plain_result("画师串列表：\n" + "\n".join(lines))
 
         elif action == "set":
             if not rest:
-                yield event.plain_result("用法：/ynai artist set <名称>")
+                yield event.plain_result("用法：/ynai artist set <ID>")
                 return
-            name = rest.strip()
-            if not self._find_artist(name):
-                yield event.plain_result(f"没有找到画师串：{name}")
+            artist_id = rest.strip()
+            if not self._find_artist(artist_id):
+                yield event.plain_result(f"没有找到画师串：{artist_id}")
                 return
-            await self.put_kv_data(f"artist:{event.unified_msg_origin}", name)
+            await self.put_kv_data(f"artist:{event.unified_msg_origin}", artist_id)
             yield event.plain_result(
-                f"已选择画师串：{name}（生图时自动拼接到提示词前面）"
+                f"已选择画师串：{artist_id}（生图时自动拼接到提示词前面）"
             )
 
         elif action == "clear":
@@ -528,45 +514,66 @@ class YesNAIPlugin(Star):
             if not self._is_admin(event):
                 yield event.plain_result("只有管理员可以添加/修改画师串")
                 return
-            add_parts = rest.split(maxsplit=1)
-            if len(add_parts) < 2:
-                yield event.plain_result("用法：/ynai artist add <名称> <画师串>")
+            add_parts = rest.split(maxsplit=2)
+            if len(add_parts) < 3:
+                yield event.plain_result(
+                    "用法：/ynai artist add <ID> <名称> <画师串>"
+                )
                 return
-            name, prompt = add_parts[0], add_parts[1].strip()
-            if not name or not prompt:
-                yield event.plain_result("名称和画师串都不能为空")
+            artist_id, name, prompt = (
+                add_parts[0].strip(),
+                add_parts[1].strip(),
+                add_parts[2].strip(),
+            )
+            if not artist_id or not name or not prompt:
+                yield event.plain_result("ID、名称和画师串都不能为空")
                 return
             artists = self.config.get("artists", []) or []
             found = False
             for artist_item in artists:
-                if artist_item.get("name") == name:
+                aid = str(artist_item.get("id") or artist_item.get("name") or "")
+                if aid == artist_id or artist_item.get("name") == artist_id:
+                    artist_item["id"] = artist_id
+                    artist_item["name"] = name
                     artist_item["prompt"] = prompt
                     found = True
                     break
             if not found:
                 artists.append(
-                    {"__template_key": "artist", "name": name, "prompt": prompt}
+                    {
+                        "__template_key": "artist",
+                        "id": artist_id,
+                        "name": name,
+                        "prompt": prompt,
+                    }
                 )
             self.config["artists"] = artists
             self.config.save_config()
-            yield event.plain_result(f"已保存画师串：{name}")
+            yield event.plain_result(f"已保存画师串：{artist_id} ({name})")
 
         elif action == "del":
             if not self._is_admin(event):
                 yield event.plain_result("只有管理员可以删除画师串")
                 return
             if not rest:
-                yield event.plain_result("用法：/ynai artist del <名称>")
+                yield event.plain_result("用法：/ynai artist del <ID>")
                 return
-            name = rest.strip()
+            artist_id = rest.strip()
             artists = self.config.get("artists", []) or []
-            new_artists = [a for a in artists if a.get("name") != name]
-            if len(new_artists) == len(artists):
-                yield event.plain_result(f"没有找到画师串：{name}")
+            new_artists = []
+            removed = False
+            for artist_item in artists:
+                aid = str(artist_item.get("id") or artist_item.get("name") or "")
+                if aid == artist_id or artist_item.get("name") == artist_id:
+                    removed = True
+                    continue
+                new_artists.append(artist_item)
+            if not removed:
+                yield event.plain_result(f"没有找到画师串：{artist_id}")
                 return
             self.config["artists"] = new_artists
             self.config.save_config()
-            yield event.plain_result(f"已删除画师串：{name}")
+            yield event.plain_result(f"已删除画师串：{artist_id}")
 
         else:
             yield event.plain_result(
