@@ -67,13 +67,13 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 
 ```
 /ynai artist list
-/ynai artist add my_artist 我的画师 artist_name, artist_style
-/ynai artist set my_artist
+/ynai artist add 我的画师 artist_name, artist_style
+/ynai artist set 1
 /ynai artist clear
-/ynai artist del my_artist
+/ynai artist del 1
 ```
 
-画师串由三部分组成：`ID`（唯一标识）、`名称`（展示名）、`内容`（具体画师串）。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
+画师串由三部分组成：`ID`（唯一标识，程序自动生成 1、2、3...）、`名称`（展示名）、`内容`（具体画师串）。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
 
 ```
 画师串, 预设正面提示词, 用户提示词

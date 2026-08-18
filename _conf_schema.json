@@ -46,7 +46,7 @@
         "display_item": "name",
         "items": {
           "id": {
-            "description": "画师串唯一 ID",
+            "description": "画师串唯一 ID（留空自动生成，建议使用数字）",
             "type": "string",
             "default": ""
           },

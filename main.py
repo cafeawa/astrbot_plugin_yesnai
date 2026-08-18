@@ -45,7 +45,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.3.0",
+    "0.4.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -213,8 +213,32 @@ class YesNAIPlugin(Star):
             return str(artist.get("prompt", "")).strip()
         return ""
 
+    def _normalize_artists(self) -> list[dict[str, Any]]:
+        """为缺少 id 的画师串自动生成数字 id（1,2,3...）。"""
+        artists = self.config.get("artists", []) or []
+        max_id = 0
+        for artist in artists:
+            raw_id = artist.get("id")
+            if raw_id is not None and str(raw_id).strip().isdigit():
+                max_id = max(max_id, int(str(raw_id).strip()))
+        next_id = max_id + 1
+        changed = False
+        for artist in artists:
+            if not artist.get("id"):
+                artist["id"] = str(next_id)
+                next_id += 1
+                changed = True
+        if changed:
+            self.config["artists"] = artists
+            try:
+                self.config.save_config()
+            except Exception:
+                pass
+        return artists
+
     def _find_artist(self, artist_id: str) -> dict[str, Any] | None:
-        for artist in self.config.get("artists", []) or []:
+        artists = self._normalize_artists()
+        for artist in artists:
             # 兼容旧数据：没有 id 时用 name 当作 id
             aid = str(artist.get("id") or artist.get("name") or "")
             if aid == artist_id or artist.get("name") == artist_id:
@@ -337,7 +361,7 @@ class YesNAIPlugin(Star):
             "/ynai0 <提示词>              直接生图\n"
             "/ynai model                  查看可用模型\n"
             "/ynai quote <描述>            生图前报价\n"
-            "/ynai artist list/set/add/del/clear  管理画师串（add 需 ID/名称/内容）\n"
+            "/ynai artist list/set/add/del/clear  管理画师串（add 自动生成数字 ID）\n"
             "/ynai preset show/positive/negative  预设正反提示词\n"
             "/ynai nsfw on/off/status     NSFW 开关\n"
             "/ynai tags <描述>             获取推荐 Tag\n\n"
@@ -473,11 +497,11 @@ class YesNAIPlugin(Star):
         rest = parts[1].strip() if len(parts) > 1 else ""
 
         if action in ("list", "ls", ""):
-            artists = self.config.get("artists", []) or []
+            artists = self._normalize_artists()
             if not artists:
                 yield event.plain_result(
                     "还没有画师串。\n"
-                    "添加：/ynai artist add <ID> <名称> <画师串>\n"
+                    "添加：/ynai artist add <名称> <画师串>\n"
                     "选择：/ynai artist set <ID>"
                 )
                 return
@@ -514,31 +538,31 @@ class YesNAIPlugin(Star):
             if not self._is_admin(event):
                 yield event.plain_result("只有管理员可以添加/修改画师串")
                 return
-            add_parts = rest.split(maxsplit=2)
-            if len(add_parts) < 3:
+            add_parts = rest.split(maxsplit=1)
+            if len(add_parts) < 2:
                 yield event.plain_result(
-                    "用法：/ynai artist add <ID> <名称> <画师串>"
+                    "用法：/ynai artist add <名称> <画师串>"
                 )
                 return
-            artist_id, name, prompt = (
-                add_parts[0].strip(),
-                add_parts[1].strip(),
-                add_parts[2].strip(),
-            )
-            if not artist_id or not name or not prompt:
-                yield event.plain_result("ID、名称和画师串都不能为空")
+            name, prompt = add_parts[0].strip(), add_parts[1].strip()
+            if not name or not prompt:
+                yield event.plain_result("名称和画师串都不能为空")
                 return
-            artists = self.config.get("artists", []) or []
+            artists = self._normalize_artists()
             found = False
             for artist_item in artists:
-                aid = str(artist_item.get("id") or artist_item.get("name") or "")
-                if aid == artist_id or artist_item.get("name") == artist_id:
-                    artist_item["id"] = artist_id
+                if artist_item.get("name") == name:
                     artist_item["name"] = name
                     artist_item["prompt"] = prompt
                     found = True
                     break
             if not found:
+                max_id = 0
+                for artist_item in artists:
+                    raw_id = artist_item.get("id")
+                    if raw_id is not None and str(raw_id).strip().isdigit():
+                        max_id = max(max_id, int(str(raw_id).strip()))
+                artist_id = str(max_id + 1)
                 artists.append(
                     {
                         "__template_key": "artist",
@@ -549,6 +573,14 @@ class YesNAIPlugin(Star):
                 )
             self.config["artists"] = artists
             self.config.save_config()
+            artist_id = next(
+                (
+                    str(a.get("id"))
+                    for a in artists
+                    if a.get("name") == name and a.get("id")
+                ),
+                "?",
+            )
             yield event.plain_result(f"已保存画师串：{artist_id} ({name})")
 
         elif action == "del":
@@ -559,7 +591,7 @@ class YesNAIPlugin(Star):
                 yield event.plain_result("用法：/ynai artist del <ID>")
                 return
             artist_id = rest.strip()
-            artists = self.config.get("artists", []) or []
+            artists = self._normalize_artists()
             new_artists = []
             removed = False
             for artist_item in artists:
