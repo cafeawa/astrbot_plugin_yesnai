@@ -43,7 +43,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.7.0",
+    "0.7.1",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -399,16 +399,28 @@ class YesNAIPlugin(Star):
     @staticmethod
     def _ynai_help_text() -> str:
         return (
-            "YesNAI 生图插件命令：\n"
-            "/ynai <描述>                 LLM 翻译 Tag 后生图（默认）\n"
-            "/ynai0 <提示词>              直接生图\n"
-            "/ynai model                  查看可用模型\n"
-            "/ynai artist list/set/add/del/clear  管理画师串（add 自动生成数字 ID）\n"
-            "/ynai preset show/positive/negative  预设正反提示词（管理员）\n"
-            "/ynai nsfw on/off/status     NSFW 开关\n\n"
-            "生图可选参数：--model, --size 832x1216, --steps, --scale, "
-            "--seed, --n, --sampler, --negative=\"lowres, bad hands\""
+            "# YesNAI 生图插件\n\n"
+            "## 生图\n"
+            "- `/ynai <描述>`：LLM 翻译 Tag 后生图（默认）\n"
+            "- `/ynai0 <提示词>`：直接生图\n\n"
+            "## 其他命令\n"
+            "- `/ynai model`：查看可用模型\n"
+            "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
+            "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
+            "- `/ynai nsfw on/off/status`：NSFW 开关\n\n"
+            "## 生图可选参数\n"
+            "`--model`、`--size 832x1216`、`--steps`、`--scale`、"
+            "`--seed`、`--n`、`--sampler`、`--negative=\"lowres, bad hands\"`"
         )
+
+    async def _ynai_help_card(self, event: AstrMessageEvent):
+        """把帮助文本渲染成文转图卡片。"""
+        try:
+            url = await self.text_to_image(self._ynai_help_text())
+            yield event.image_result(url)
+        except Exception as exc:
+            logger.error(f"帮助卡片渲染失败: {exc}")
+            yield event.plain_result(self._ynai_help_text())
 
     # ---------------------------------------------------------------
     # 公共生成逻辑
@@ -699,7 +711,8 @@ class YesNAIPlugin(Star):
         """YesNAI 主命令：/ynai <描述> 默认 LLM 翻译生图，/ynai model 等为子命令"""
         args = self._command_args(event)
         if not args:
-            yield event.plain_result(self._ynai_help_text())
+            async for result in self._ynai_help_card(event):
+                yield result
             return
 
         first, _, rest = args.partition(" ")
@@ -707,7 +720,8 @@ class YesNAIPlugin(Star):
         sub_args = rest.strip()
 
         if sub in ("help", "h", "?"):
-            yield event.plain_result(self._ynai_help_text())
+            async for result in self._ynai_help_card(event):
+                yield result
         elif sub in ("model", "models", "m"):
             async for result in self._ynai_model(event, sub_args):
                 yield result
