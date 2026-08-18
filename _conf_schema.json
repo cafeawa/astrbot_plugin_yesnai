@@ -42,10 +42,16 @@
     "hint": "用户未指定 --steps 时使用"
   },
   "default_n_samples": {
-    "description": "默认生成数量",
+    "description": "默认生成数量（每次生成几张图）",
     "type": "int",
     "default": 1,
     "hint": "用户未指定 --n 时使用"
+  },
+  "default_sampler": {
+    "description": "默认采样器名称",
+    "type": "string",
+    "default": "k_euler_ancestral",
+    "hint": "用户未指定 --sampler 时使用，例如 k_euler_ancestral、k_dpmpp_2m"
   },
   "preset_positive_prompt": {
     "description": "预设正面提示词",
