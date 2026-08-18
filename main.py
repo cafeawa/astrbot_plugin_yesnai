@@ -43,7 +43,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.7.3",
+    "0.7.5",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -413,15 +413,89 @@ class YesNAIPlugin(Star):
             "`--seed`、`--n`、`--sampler`、`--negative=\"lowres, bad hands\"`"
         )
 
+    @staticmethod
+    def _ynai_help_html() -> str:
+        """自包含的帮助卡片 HTML，不依赖外部 CDN/JS，避免文转图服务渲染空白。"""
+        return """<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #ffffff;
+    color: #333333;
+    padding: 28px 32px;
+    margin: 0;
+  }
+  h1 {
+    color: #3276dc;
+    font-size: 32px;
+    margin: 0 0 6px 0;
+  }
+  h2 {
+    color: #3276dc;
+    font-size: 22px;
+    border-bottom: 2px solid #3276dc;
+    padding-bottom: 6px;
+    margin: 22px 0 10px 0;
+  }
+  ul {
+    margin: 6px 0;
+    padding-left: 22px;
+  }
+  li {
+    font-size: 17px;
+    line-height: 1.9;
+  }
+  code {
+    background: #f2f2f2;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: Menlo, Monaco, Consolas, monospace;
+    font-size: 15px;
+    color: #c7254e;
+  }
+  .footer {
+    margin-top: 24px;
+    color: #999999;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+  <h1>YesNAI 生图插件</h1>
+  <h2>生图</h2>
+  <ul>
+    <li><code>/ynai &lt;描述&gt;</code>：LLM 翻译 Tag 后生图（默认）</li>
+    <li><code>/ynai0 &lt;提示词&gt;</code>：直接生图</li>
+  </ul>
+  <h2>其他命令</h2>
+  <ul>
+    <li><code>/ynai model</code>：查看可用模型</li>
+    <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
+    <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
+    <li><code>/ynai nsfw on/off/status</code>：NSFW 开关</li>
+  </ul>
+  <h2>生图可选参数</h2>
+  <ul>
+    <li><code>--model</code>、<code>--size 832x1216</code>、<code>--steps</code>、<code>--scale</code></li>
+    <li><code>--seed</code>、<code>--n</code>、<code>--sampler</code>、<code>--negative="lowres, bad hands"</code></li>
+  </ul>
+  <div class="footer">AstrBot YesNAI 生图插件帮助卡片</div>
+</body>
+</html>"""
+
     async def _render_help_via_t2i(self, t2i_url: str) -> str:
         """使用插件配置的自定义文转图服务地址渲染帮助卡片。"""
         from astrbot.core.utils.t2i.network_strategy import NetworkRenderStrategy
 
         renderer = NetworkRenderStrategy(base_url=t2i_url)
-        return await renderer.render(
-            self._ynai_help_text(),
+        return await renderer.render_custom_template(
+            self._ynai_help_html(),
+            {},
             return_url=True,
-            template_name="base",
+            options={"full_page": True, "type": "png", "quality": 90},
         )
 
     async def _ynai_help_card(self, event: AstrMessageEvent):
