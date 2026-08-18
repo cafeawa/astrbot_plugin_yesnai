@@ -92,6 +92,12 @@
     "default": true,
     "hint": "开启后会在生成前显示最终 Prompt；关闭后只显示模型和生成状态"
   },
+  "t2i_url": {
+    "description": "自定义文转图服务地址",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用 AstrBot 默认文转图服务；自建服务可填 http://localhost:8999 或 http://localhost:8999/text2img"
+  },
   "translation_llm": {
     "description": "翻译 Tag 使用的 LLM",
     "type": "string",

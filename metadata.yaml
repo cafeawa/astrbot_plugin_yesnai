@@ -2,7 +2,7 @@ name: astrbot_plugin_yesnai # 插件唯一识别名，推荐以 astrbot_plugin_ 
 display_name: YesNAI 生图 # 插件展示名
 desc: 调用 YesNovelAI / YesNAI API 生成图像的 AstrBot 插件。
 short_desc: 通过 YesNAI API 生成 NovelAI 风格图像。
-version: v0.7.1
+version: v0.7.2
 author: cafe_awa_
 repo: https://github.com/cafe_awa_/astrbot_plugin_yesnai
 astrbot_version: ">=4.16"
