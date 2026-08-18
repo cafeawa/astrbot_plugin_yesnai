@@ -23,6 +23,30 @@
     "default": 120,
     "hint": "生图通常较慢，建议不要设置太短"
   },
+  "default_width": {
+    "description": "默认生图宽度",
+    "type": "int",
+    "default": 832,
+    "hint": "用户未指定 --size 时使用"
+  },
+  "default_height": {
+    "description": "默认生图高度",
+    "type": "int",
+    "default": 1216,
+    "hint": "用户未指定 --size 时使用"
+  },
+  "default_steps": {
+    "description": "默认采样步数",
+    "type": "int",
+    "default": 28,
+    "hint": "用户未指定 --steps 时使用"
+  },
+  "default_n_samples": {
+    "description": "默认生成数量",
+    "type": "int",
+    "default": 1,
+    "hint": "用户未指定 --n 时使用"
+  },
   "preset_positive_prompt": {
     "description": "预设正面提示词",
     "type": "text",
