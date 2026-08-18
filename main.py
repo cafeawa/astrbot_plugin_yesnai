@@ -45,7 +45,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.5.0",
+    "0.4.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -71,39 +71,12 @@ class YesNAIPlugin(Star):
             return parts[1].strip() if len(parts) > 1 else ""
         return text
 
-    def _is_admin(self, event: AstrMessageEvent) -> bool:
-        # 1. AstrBot 平台角色管理员
+    @staticmethod
+    def _is_admin(event: AstrMessageEvent) -> bool:
         try:
-            if event.is_admin():
-                return True
+            return bool(event.is_admin())
         except Exception:
-            pass
-
-        # 2. 配置中的管理员 QQ 号
-        try:
-            sender_id = str(event.get_sender_id() or "")
-            qq_admins = {
-                str(x).strip()
-                for x in self.config.get("admin_qq_ids", []) or []
-            }
-            if sender_id and sender_id in qq_admins:
-                return True
-        except Exception:
-            pass
-
-        # 3. 配置中的管理员 UMO
-        try:
-            umo = str(event.unified_msg_origin or "")
-            umo_admins = {
-                str(x).strip()
-                for x in self.config.get("admin_umos", []) or []
-            }
-            if umo and umo in umo_admins:
-                return True
-        except Exception:
-            pass
-
-        return False
+            return False
 
     @staticmethod
     def _ensure_tag(text: str, tag: str) -> str:

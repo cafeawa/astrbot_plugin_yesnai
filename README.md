@@ -34,8 +34,6 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `api_token` | 你的 API Token，格式 `ynai-...`，在控制台 API Keys 页面创建 |
 | `default_model` | 默认生图模型，如 `nai-diffusion-4-5-full` |
 | `timeout` | 请求超时时间（秒），默认 `120` |
-| `admin_qq_ids` | 管理员 QQ 号列表，例如 `["123456789"]` |
-| `admin_umos` | 管理员 UMO 列表，例如 `["default:GroupMessage:123456"]` |
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
 | `artists` | 画师串预设列表，每项包含 `id`、`name`、`prompt`（也可用 `/ynai artist add` 添加） |
