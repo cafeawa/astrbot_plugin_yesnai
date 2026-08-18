@@ -43,7 +43,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.7.2",
+    "0.7.3",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -425,21 +425,21 @@ class YesNAIPlugin(Star):
         )
 
     async def _ynai_help_card(self, event: AstrMessageEvent):
-        """把帮助文本渲染成文转图卡片。"""
+        """把帮助文本渲染成文转图卡片。
+
+        仅使用插件配置的 t2i_url；未配置或失败时不使用 AstrBot 默认文转图，
+        直接返回纯文本帮助。
+        """
         t2i_url = str(self.config.get("t2i_url", "") or "").strip()
-        if t2i_url:
-            try:
-                url = await self._render_help_via_t2i(t2i_url)
-                yield event.image_result(url)
-                return
-            except Exception as exc:
-                logger.error(f"自定义文转图服务渲染失败: {exc}，回退到 AstrBot 默认")
+        if not t2i_url:
+            yield event.plain_result(self._ynai_help_text())
+            return
 
         try:
-            url = await self.text_to_image(self._ynai_help_text())
+            url = await self._render_help_via_t2i(t2i_url)
             yield event.image_result(url)
         except Exception as exc:
-            logger.error(f"帮助卡片渲染失败: {exc}")
+            logger.error(f"自定义文转图服务渲染失败: {exc}")
             yield event.plain_result(self._ynai_help_text())
 
     # ---------------------------------------------------------------
