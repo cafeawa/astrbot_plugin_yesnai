@@ -23,6 +23,24 @@
     "default": 120,
     "hint": "生图通常较慢，建议不要设置太短"
   },
+  "admin_qq_ids": {
+    "description": "管理员 QQ 号列表",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "填 QQ 号即可，例如 [\"123456789\"]；命中后拥有管理员权限"
+  },
+  "admin_umos": {
+    "description": "管理员 UMO 列表",
+    "type": "list",
+    "default": [],
+    "items": {
+      "type": "string"
+    },
+    "hint": "填完整 UMO，例如 [\"default:GroupMessage:123456\"]；命中该会话即视为管理员"
+  },
   "preset_positive_prompt": {
     "description": "预设正面提示词",
     "type": "text",
