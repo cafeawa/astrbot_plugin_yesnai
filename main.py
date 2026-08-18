@@ -43,7 +43,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.7.3",
+    "0.7.4",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -360,8 +360,26 @@ class YesNAIPlugin(Star):
         paths: list[Path] = []
         for b64 in images:
             raw = base64.b64decode(b64)
-            path = data_dir / f"yesnai_{uuid.uuid4().hex}.{image_format}"
-            path.write_bytes(raw)
+            try:
+                import io
+
+                from PIL import Image
+
+                img = Image.open(io.BytesIO(raw))
+                # 部分聊天平台对 RGBA PNG 支持不好，会显示成白图/空白图，
+                # 这里统一转成 RGB 再保存。
+                if img.mode in ("RGBA", "LA", "P"):
+                    img = img.convert("RGB")
+                if image_format.lower() in ("jpg", "jpeg"):
+                    path = data_dir / f"yesnai_{uuid.uuid4().hex}.jpg"
+                    img.save(path, format="JPEG", quality=95)
+                else:
+                    path = data_dir / f"yesnai_{uuid.uuid4().hex}.png"
+                    img.save(path, format="PNG")
+            except Exception:
+                # 没有 Pillow 或转换失败时退回原始字节
+                path = data_dir / f"yesnai_{uuid.uuid4().hex}.{image_format}"
+                path.write_bytes(raw)
             paths.append(path)
         return paths
 
