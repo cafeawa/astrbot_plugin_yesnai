@@ -86,6 +86,12 @@
     "default": true,
     "hint": "使用翻译 LLM 把自然语言描述转换为 Danbooru 风格 Tag；/ynai 默认走翻译"
   },
+  "show_tags": {
+    "description": "生图时是否展示 Tag/最终提示词",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后会在生成前显示最终 Prompt；关闭后只显示模型和生成状态"
+  },
   "translation_llm": {
     "description": "翻译 Tag 使用的 LLM",
     "type": "string",

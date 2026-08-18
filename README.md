@@ -7,12 +7,10 @@
 - ✅ `/ynai <描述>` 默认使用 LLM 翻译成 Danbooru Tag 后生图
 - ✅ `/ynai0 <提示词>` 直接生图（不做 LLM 翻译）
 - ✅ `/ynai artist` 管理画师串，生图时自动拼接到提示词前面
-- ✅ `/ynai preset` 查看/设置预设正反提示词
+- ✅ `/ynai preset` 查看/设置预设正反提示词（仅管理员）
 - ✅ `/ynai nsfw` NSFW 开关（`on/off` 仅管理员）
 - ✅ `/ynai model` 查看可用模型
-- ✅ `/ynai quote` 生图前报价
-- ✅ `/ynai tags` 使用 API 的 suggest-tags 工具
-- ✅ 管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作
+- ✅ 管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作
 - ✅ 完整封装 YesNAI 公开 API（生成、报价、模型、Vibe、放大、图像处理、标注、Native 兼容端点）
 
 ## 安装
@@ -44,6 +42,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `artists` | 画师串预设列表，每项格式 `名称\|\|画师串`，ID 按顺序自动生成（也可用 `/ynai artist add` 添加） |
 | `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
+| `show_tags` | 生图时是否展示 Tag/最终提示词，默认开启 |
 | `translation_llm` | 翻译 Tag 使用的 LLM；留空自动使用当前会话 LLM |
 | `translation_prompt` | 翻译 LLM 的翻译提示词（系统提示词） |
 
@@ -92,7 +91,7 @@ ID 会自动按列表顺序生成。选择画师串后，生成时会自动把�
 画师串, 预设正面提示词, 用户提示词
 ```
 
-### 预设正反提示词
+### 预设正反提示词（仅管理员）
 
 ```
 /ynai preset show
@@ -116,8 +115,6 @@ ID 会自动按列表顺序生成。选择画师串后，生成时会自动把�
 
 ```
 /ynai model
-/ynai quote 1girl --size 832x1216 --steps 28
-/ynai tags 一个女孩
 /ynai help
 ```
 

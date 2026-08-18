@@ -4,13 +4,11 @@
 - /ynai <描述>             默认使用 LLM 翻译成 Danbooru Tag 后生图
 - /ynai0 <提示词>          直接生图（不做 LLM 翻译）
 - /ynai model              查看可用模型
-- /ynai quote              生图前报价
 - /ynai artist             管理画师串
-- /ynai preset             查看/设置预设正反提示词
+- /ynai preset             查看/设置预设正反提示词（仅管理员）
 - /ynai nsfw               查看/切换 NSFW 开关
-- /ynai tags               使用 API 的 suggest-tags 工具
 
-管理员设置：画师串增删、预设提示词修改、NSFW 开关仅管理员可操作。
+管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作。
 """
 
 from __future__ import annotations
@@ -45,7 +43,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.6.4",
+    "0.7.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -405,11 +403,9 @@ class YesNAIPlugin(Star):
             "/ynai <描述>                 LLM 翻译 Tag 后生图（默认）\n"
             "/ynai0 <提示词>              直接生图\n"
             "/ynai model                  查看可用模型\n"
-            "/ynai quote <描述>            生图前报价\n"
             "/ynai artist list/set/add/del/clear  管理画师串（add 自动生成数字 ID）\n"
-            "/ynai preset show/positive/negative  预设正反提示词\n"
-            "/ynai nsfw on/off/status     NSFW 开关\n"
-            "/ynai tags <描述>             获取推荐 Tag\n\n"
+            "/ynai preset show/positive/negative  预设正反提示词（管理员）\n"
+            "/ynai nsfw on/off/status     NSFW 开关\n\n"
             "生图可选参数：--model, --size 832x1216, --steps, --scale, "
             "--seed, --n, --sampler, --negative=\"lowres, bad hands\""
         )
@@ -456,9 +452,13 @@ class YesNAIPlugin(Star):
                 or self.config.get("default_model", "nai-diffusion-4-5-full")
             )
 
-            yield event.plain_result(
-                f"正在生成...\n模型: {model}\nPrompt: {final_prompt[:200]}"
-            )
+            if self.config.get("show_tags", True):
+                generate_msg = (
+                    f"正在生成...\n模型: {model}\nPrompt: {final_prompt[:200]}"
+                )
+            else:
+                generate_msg = f"正在生成...\n模型: {model}"
+            yield event.plain_result(generate_msg)
 
             client = self._get_client()
             resp = await client.generate_image(
@@ -502,39 +502,6 @@ class YesNAIPlugin(Star):
         except Exception as exc:
             logger.error(f"获取模型列表失败: {exc}")
             yield event.plain_result(f"获取模型列表失败: {exc}")
-
-    async def _ynai_quote(self, event: AstrMessageEvent, args: str):
-        if not args:
-            yield event.plain_result(
-                "用法：/ynai quote <提示词> [--model 模型] [--size 832x1216] "
-                "[--steps 28] [--n 1]"
-            )
-            return
-
-        options, prompt = self._parse_options(args)
-        if not prompt:
-            yield event.plain_result("请提供提示词")
-            return
-
-        try:
-            artist_prompt = await self._get_selected_artist_prompt(event)
-            payload = self._quote_payload(prompt, options, artist_prompt)
-            client = self._get_client()
-            resp = await client.quote(payload)
-
-            lines = [
-                f"模型: {resp.get('model', '?')}",
-                f"Pricing mode: {resp.get('pricing_mode', '?')}",
-                f"Estimated Anlas: {resp.get('estimated_anlas', '?')}",
-                f"Total Gems: {resp.get('total_gems', '?')}",
-                f"Balance Gems: {resp.get('balance_gems', '?')}",
-            ]
-            if resp.get("base_gems") is not None:
-                lines.append(f"Base Gems: {resp.get('base_gems')}")
-            yield event.plain_result("报价（不扣费）：\n" + "\n".join(lines))
-        except Exception as exc:
-            logger.error(f"报价失败: {exc}")
-            yield event.plain_result(f"报价失败: {exc}")
 
     async def _ynai_artist(self, event: AstrMessageEvent, args: str):
         parts = args.split(maxsplit=1)
@@ -658,6 +625,9 @@ class YesNAIPlugin(Star):
             )
 
     async def _ynai_preset(self, event: AstrMessageEvent, args: str):
+        if not self._is_admin(event):
+            yield event.plain_result("只有管理员可以使用 /ynai preset 命令")
+            return
         parts = args.split(maxsplit=1)
         action = parts[0].lower() if parts else "show"
         rest = parts[1].strip() if len(parts) > 1 else ""
@@ -721,35 +691,6 @@ class YesNAIPlugin(Star):
             f"NSFW 开关已{'开启' if action == 'on' else '关闭'}"
         )
 
-    async def _ynai_tags(self, event: AstrMessageEvent, args: str):
-        if not args:
-            yield event.plain_result("用法：/ynai tags <描述> [--model 模型]")
-            return
-
-        options, prompt = self._parse_options(args)
-        if not prompt:
-            yield event.plain_result("请提供描述")
-            return
-
-        try:
-            model = str(
-                options.get("model")
-                or self.config.get("default_model", "nai-diffusion-4-5-full")
-            )
-            client = self._get_client()
-            data = await client.suggest_tags(prompt, model)
-            tags = data.get("tags", [])
-            if not tags:
-                yield event.plain_result("没有获取到推荐 Tag")
-                return
-            text = "推荐 Tags：\n" + ", ".join(
-                str(t.get("tag", "")) for t in tags
-            )
-            yield event.plain_result(text)
-        except Exception as exc:
-            logger.error(f"获取 Tag 失败: {exc}")
-            yield event.plain_result(f"获取 Tag 失败: {exc}")
-
     # ---------------------------------------------------------------
     # 指令入口
     # ---------------------------------------------------------------
@@ -770,9 +711,6 @@ class YesNAIPlugin(Star):
         elif sub in ("model", "models", "m"):
             async for result in self._ynai_model(event, sub_args):
                 yield result
-        elif sub in ("quote", "q"):
-            async for result in self._ynai_quote(event, sub_args):
-                yield result
         elif sub in ("artist", "a"):
             async for result in self._ynai_artist(event, sub_args):
                 yield result
@@ -781,9 +719,6 @@ class YesNAIPlugin(Star):
                 yield result
         elif sub in ("nsfw",):
             async for result in self._ynai_nsfw(event, sub_args):
-                yield result
-        elif sub in ("tags", "t"):
-            async for result in self._ynai_tags(event, sub_args):
                 yield result
         else:
             async for result in self._ynai_generate(
