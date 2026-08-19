@@ -576,7 +576,7 @@ class YesNAIPlugin(Star):
             "- `/ynai0 <提示词>`：直接生图\n\n"
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
-            "- `/ynai i2i <描述>`：图重绘（需引用图片）\n"
+            "- `/ynai i2i <描述>`：图重绘（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过）\n"
             "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过、`-b` 同时参考画风）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
@@ -646,7 +646,7 @@ class YesNAIPlugin(Star):
   <h2>其他命令</h2>
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
-    <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片）</li>
+    <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过）</li>
     <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过、<code>-b</code> 同时参考画风）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
@@ -884,7 +884,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai i2i <描述> [--strength 0.65] [--noise 0.1] "
-                "[--model 模型] [--size 832x1216]"
+                "[--model 模型] [--size 832x1216] [-nt]"
             )
             return
 
@@ -894,6 +894,25 @@ class YesNAIPlugin(Star):
                 "请回复/引用一张图片后再使用 /ynai i2i <描述>"
             )
             return
+
+        if options.get("translate", True):
+            if not self.config.get("llm_translation_enabled", True):
+                yield event.plain_result(
+                    "LLM 翻译 Tag 功能未启用，请管理员在插件配置中开启 "
+                    "llm_translation_enabled"
+                )
+                return
+            yield event.plain_result("正在用 LLM 翻译 Tag...")
+            try:
+                ok, translated = await self._translate_to_tags(event, prompt)
+            except Exception as exc:
+                logger.exception("LLM 翻译出现未预期错误")
+                yield event.plain_result(f"LLM 翻译出现未预期错误: {exc}")
+                return
+            if not ok:
+                yield event.plain_result(translated)
+                return
+            prompt = translated
 
         try:
             base64_image = await image.convert_to_base64()
