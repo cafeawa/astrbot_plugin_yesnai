@@ -138,6 +138,7 @@ class YesNAIPlugin(Star):
         支持：
         -t / --translate
         -nt / --no-translate
+        -b / --both
         --model, --size, --steps, --scale, --seed, --n, --sampler, --negative
         返回 (options, 去除参数后的提示词)。
         """
@@ -167,6 +168,8 @@ class YesNAIPlugin(Star):
                 options["translate"] = True
             elif tok in ("-nt", "--no-translate"):
                 options["translate"] = False
+            elif tok in ("-b", "--both"):
+                options["both"] = True
             elif tok.startswith("--") and "=" in tok:
                 key, value = tok[2:].split("=", 1)
                 options[key] = value
@@ -574,7 +577,7 @@ class YesNAIPlugin(Star):
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
             "- `/ynai i2i <描述>`：图重绘（需引用图片）\n"
-            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过）\n"
+            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过、`-b` 同时参考画风）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
             "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
@@ -644,7 +647,7 @@ class YesNAIPlugin(Star):
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
     <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片）</li>
-    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过）</li>
+    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过、<code>-b</code> 同时参考画风）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
     <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
@@ -956,7 +959,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai ref <描述> [--strength 0.6] [--model 模型] "
-                "[--size 832x1216] [-nt]"
+                "[--size 832x1216] [-nt] [-b]"
             )
             return
 
@@ -1013,10 +1016,13 @@ class YesNAIPlugin(Star):
                 float(options.get("secondary_strength", 0.25))
             ]
             params["director_reference_information_extracted"] = [1.0]
+            reference_caption = (
+                "character&style" if options.get("both") else "character"
+            )
             params["director_reference_descriptions"] = [
                 {
                     "caption": {
-                        "base_caption": "character",
+                        "base_caption": reference_caption,
                         "char_captions": [],
                     },
                     "legacy_uc": False,
