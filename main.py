@@ -929,13 +929,29 @@ class YesNAIPlugin(Star):
             negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
 
             params = self._build_parameters(options)
+            params["params_version"] = 3
+            params["legacy_uc"] = False
             strength = float(options.get("strength", 0.65))
             noise = float(options.get("noise", 0.1))
             params["image"] = base64_image
             params["strength"] = strength
             params["noise"] = noise
             params["img2img"] = {"color_correct": True, "strength": strength}
-            params["prompt"] = final_prompt
+            params["v4_prompt"] = {
+                "caption": {
+                    "base_caption": final_prompt,
+                    "char_captions": [],
+                },
+                "use_coords": False,
+                "use_order": True,
+            }
+            params["v4_negative_prompt"] = {
+                "caption": {
+                    "base_caption": negative,
+                    "char_captions": [],
+                },
+                "legacy_uc": False,
+            }
             if negative:
                 params["negative_prompt"] = negative
 
