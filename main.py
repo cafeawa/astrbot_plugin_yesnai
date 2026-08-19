@@ -431,6 +431,36 @@ class YesNAIPlugin(Star):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @staticmethod
+    def _normalize_reference_image(base64_image: str) -> str:
+        """把角色参考图处理成 NovelAI v4 支持的尺寸/格式。
+
+        角色参考要求 1024x1536、1536x1024 或 1472x1472（黑边填充）。
+        这里按方向选择 1024x1536 / 1536x1024，等比缩放后黑边填充并转 JPEG。
+        PIL 不可用或处理失败时回退原图，避免阻塞生图流程。
+        """
+        try:
+            import io
+
+            from PIL import Image as PILImage
+
+            raw = base64.b64decode(base64_image)
+            img = PILImage.open(io.BytesIO(raw))
+            img = img.convert("RGB")
+            width, height = img.size
+            target = (1536, 1024) if width >= height else (1024, 1536)
+            img.thumbnail(target, PILImage.LANCZOS)
+            canvas = PILImage.new("RGB", target, (0, 0, 0))
+            canvas.paste(
+                img,
+                ((target[0] - img.width) // 2, (target[1] - img.height) // 2),
+            )
+            buf = io.BytesIO()
+            canvas.save(buf, format="JPEG", quality=90)
+            return base64.b64encode(buf.getvalue()).decode()
+        except Exception:
+            return base64_image
+
     def _save_images(self, images: list[str], image_format: str = "png") -> list[Path]:
         data_dir = self._data_dir()
         paths: list[Path] = []
@@ -930,6 +960,7 @@ class YesNAIPlugin(Star):
         except Exception as exc:
             yield event.plain_result(f"图片读取失败: {exc}")
             return
+        base64_image = self._normalize_reference_image(base64_image)
 
         try:
             artist_prompt = await self._get_selected_artist_prompt(event)
@@ -940,6 +971,9 @@ class YesNAIPlugin(Star):
             negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
 
             params = self._build_parameters(options)
+            params.setdefault("scale", 6.0)
+            params["params_version"] = 3
+            params["legacy_uc"] = False
             params["director_reference_images"] = [base64_image]
             params["director_reference_strength_values"] = [
                 float(options.get("strength", 0.6))
@@ -961,9 +995,17 @@ class YesNAIPlugin(Star):
                 "caption": {
                     "base_caption": final_prompt,
                     "char_captions": [],
-                }
+                },
+                "use_coords": False,
+                "use_order": True,
             }
-            params["prompt"] = final_prompt
+            params["v4_negative_prompt"] = {
+                "caption": {
+                    "base_caption": negative,
+                    "char_captions": [],
+                },
+                "legacy_uc": False,
+            }
             if negative:
                 params["negative_prompt"] = negative
 
