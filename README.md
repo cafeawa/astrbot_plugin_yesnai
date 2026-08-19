@@ -10,6 +10,8 @@
 - ✅ `/ynai preset` 查看/设置预设正反提示词（仅管理员）
 - ✅ `/ynai nsfw` NSFW 开关（按会话，`on/off/reset` 仅管理员）
 - ✅ Agent 工具 `ynai_generate`：LLM 传入 tags，使用默认生图配置生图并发送
+- ✅ `/ynai img2img <描述>` 图重绘（需引用/附带图片）
+- ✅ `/ynai ref <描述>` 参考角色生成（需引用/附带图片）
 - ✅ `/ynai model` 查看可用模型
 - ✅ 管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作
 - ✅ 完整封装 YesNAI 公开 API（生成、报价、模型、Vibe、放大、图像处理、标注、Native 兼容端点）
@@ -100,6 +102,19 @@ ID 会自动按列表顺序生成。画师串选择**按会话保存**，不同�
 /ynai preset positive masterpiece, best quality, absurdres
 /ynai preset negative lowres, bad anatomy, bad hands
 ```
+
+### 图重绘 / 参考角色
+
+必须**回复/引用一张图片**后再使用：
+
+```
+/ynai img2img 改成油画风格 --strength 0.65
+/ynai ref 保持这个角色，换一个姿势 --strength 0.6
+```
+
+- `img2img`：图重绘
+- `ref`：参考角色生成
+- 不支持 `inpaint`
 
 ### NSFW
 

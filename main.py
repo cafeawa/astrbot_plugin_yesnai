@@ -44,7 +44,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.8.2",
+    "0.9.0",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -156,6 +156,8 @@ class YesNAIPlugin(Star):
             "--n": "n",
             "--sampler": "sampler",
             "--negative": "negative",
+            "--strength": "strength",
+            "--noise": "noise",
         }
         i = 0
         while i < len(tokens):
@@ -315,6 +317,28 @@ class YesNAIPlugin(Star):
                 return artist
         return None
 
+    async def _get_referenced_image(self, event: AstrMessageEvent):
+        """从当前消息或引用消息中提取第一张图片组件。"""
+        try:
+            from astrbot.api.message_components import Image
+        except Exception:
+            return None
+
+        def find_image(components) -> Any | None:
+            for comp in components or []:
+                if isinstance(comp, Image) or str(getattr(comp, "type", "")) == "image":
+                    return comp
+                if str(getattr(comp, "type", "")) == "reply":
+                    nested = find_image(getattr(comp, "chain", None))
+                    if nested:
+                        return nested
+            return None
+
+        try:
+            return find_image(event.get_messages())
+        except Exception:
+            return None
+
     def _compose_positive_prompt(
         self,
         prompt: str,
@@ -437,6 +461,8 @@ class YesNAIPlugin(Star):
             "- `/ynai0 <提示词>`：直接生图\n\n"
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
+            "- `/ynai img2img <描述>`：图重绘（需引用图片）\n"
+            "- `/ynai ref <描述>`：参考角色生成（需引用图片）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
             "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
@@ -505,6 +531,8 @@ class YesNAIPlugin(Star):
   <h2>其他命令</h2>
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
+    <li><code>/ynai img2img &lt;描述&gt;</code>：图重绘（需引用图片）</li>
+    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
     <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
@@ -718,6 +746,167 @@ class YesNAIPlugin(Star):
     # ---------------------------------------------------------------
     # 子命令
     # ---------------------------------------------------------------
+    async def _ynai_img2img(self, event: AstrMessageEvent, args: str):
+        """图重绘：必须引用/附带一张图片。"""
+        options, prompt = self._parse_options(args)
+        if not prompt:
+            yield event.plain_result(
+                "用法：/ynai img2img <描述> [--strength 0.65] [--noise 0.1] "
+                "[--model 模型] [--size 832x1216]"
+            )
+            return
+
+        image = await self._get_referenced_image(event)
+        if not image:
+            yield event.plain_result(
+                "请回复/引用一张图片后再使用 /ynai img2img <描述>"
+            )
+            return
+
+        try:
+            base64_image = await image.convert_to_base64()
+        except Exception as exc:
+            yield event.plain_result(f"图片读取失败: {exc}")
+            return
+
+        try:
+            artist_prompt = await self._get_selected_artist_prompt(event)
+            nsfw_enabled = await self._get_nsfw_enabled(event)
+            final_prompt = self._compose_positive_prompt(
+                prompt, artist_prompt, nsfw_enabled=nsfw_enabled
+            )
+            negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
+
+            params = self._build_parameters(options)
+            strength = float(options.get("strength", 0.65))
+            noise = float(options.get("noise", 0.1))
+            params["image"] = base64_image
+            params["strength"] = strength
+            params["noise"] = noise
+            params["img2img"] = {"color_correct": True, "strength": strength}
+            params["prompt"] = final_prompt
+            if negative:
+                params["negative_prompt"] = negative
+
+            model = str(
+                options.get("model")
+                or self.config.get("default_model", "nai-diffusion-4-5-full")
+            )
+
+            yield event.plain_result(f"正在重绘...\n模型: {model}")
+
+            client = self._get_client()
+            resp = await client.generate_image(
+                model=model,
+                input_text=final_prompt,
+                parameters=params,
+                action="img2img",
+            )
+            images = resp.get("images") or []
+            if not images:
+                yield event.plain_result(f"重绘失败或没有返回图片：{resp}")
+                return
+
+            fmt = str(resp.get("image_format", "png"))
+            paths = self._save_images(images, fmt)
+            job = resp.get("job", {})
+            cost = job.get("cost_gems", "?")
+            yield event.plain_result(f"重绘完成，消耗 {cost} Gems")
+            for path in paths:
+                yield event.image_result(str(path))
+        except Exception as exc:
+            logger.error(f"YesNAI 图重绘失败: {exc}")
+            yield event.plain_result(f"图重绘失败: {exc}")
+
+    async def _ynai_ref(self, event: AstrMessageEvent, args: str):
+        """角色参考：必须引用/附带一张图片。"""
+        options, prompt = self._parse_options(args)
+        if not prompt:
+            yield event.plain_result(
+                "用法：/ynai ref <描述> [--strength 0.6] [--model 模型] "
+                "[--size 832x1216]"
+            )
+            return
+
+        image = await self._get_referenced_image(event)
+        if not image:
+            yield event.plain_result(
+                "请回复/引用一张图片后再使用 /ynai ref <描述>"
+            )
+            return
+
+        try:
+            base64_image = await image.convert_to_base64()
+        except Exception as exc:
+            yield event.plain_result(f"图片读取失败: {exc}")
+            return
+
+        try:
+            artist_prompt = await self._get_selected_artist_prompt(event)
+            nsfw_enabled = await self._get_nsfw_enabled(event)
+            final_prompt = self._compose_positive_prompt(
+                prompt, artist_prompt, nsfw_enabled=nsfw_enabled
+            )
+            negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
+
+            params = self._build_parameters(options)
+            params["director_reference_images"] = [base64_image]
+            params["director_reference_strength_values"] = [
+                float(options.get("strength", 0.6))
+            ]
+            params["director_reference_secondary_strength_values"] = [
+                float(options.get("secondary_strength", 0.25))
+            ]
+            params["director_reference_information_extracted"] = [1.0]
+            params["director_reference_descriptions"] = [
+                {
+                    "caption": {
+                        "base_caption": "character",
+                        "char_captions": [],
+                    },
+                    "legacy_uc": False,
+                }
+            ]
+            params["v4_prompt"] = {
+                "caption": {
+                    "base_caption": final_prompt,
+                    "char_captions": [],
+                }
+            }
+            params["prompt"] = final_prompt
+            if negative:
+                params["negative_prompt"] = negative
+
+            model = str(
+                options.get("model")
+                or self.config.get("default_model", "nai-diffusion-4-5-full")
+            )
+
+            yield event.plain_result(f"正在使用参考角色生成...\n模型: {model}")
+
+            client = self._get_client()
+            resp = await client.generate_image(
+                model=model,
+                input_text=final_prompt,
+                parameters=params,
+                action="generate",
+            )
+            images = resp.get("images") or []
+            if not images:
+                yield event.plain_result(f"参考生成失败或没有返回图片：{resp}")
+                return
+
+            fmt = str(resp.get("image_format", "png"))
+            paths = self._save_images(images, fmt)
+            job = resp.get("job", {})
+            cost = job.get("cost_gems", "?")
+            yield event.plain_result(f"生成完成，消耗 {cost} Gems")
+            for path in paths:
+                yield event.image_result(str(path))
+        except Exception as exc:
+            logger.error(f"YesNAI 参考角色生成失败: {exc}")
+            yield event.plain_result(f"参考角色生成失败: {exc}")
+
     async def _ynai_model(self, event: AstrMessageEvent, args: str):
         try:
             client = self._get_client()
@@ -967,6 +1156,12 @@ class YesNAIPlugin(Star):
                 yield result
         elif sub in ("nsfw",):
             async for result in self._ynai_nsfw(event, sub_args):
+                yield result
+        elif sub in ("img2img", "i2i"):
+            async for result in self._ynai_img2img(event, sub_args):
+                yield result
+        elif sub in ("ref", "reference"):
+            async for result in self._ynai_ref(event, sub_args):
                 yield result
         else:
             async for result in self._ynai_generate(
