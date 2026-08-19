@@ -139,6 +139,7 @@ class YesNAIPlugin(Star):
         -t / --translate
         -nt / --no-translate
         -b / --both
+        -s / --style
         --model, --size, --steps, --scale, --seed, --n, --sampler, --negative
         返回 (options, 去除参数后的提示词)。
         """
@@ -170,6 +171,8 @@ class YesNAIPlugin(Star):
                 options["translate"] = False
             elif tok in ("-b", "--both"):
                 options["both"] = True
+            elif tok in ("-s", "--style"):
+                options["style"] = True
             elif tok.startswith("--") and "=" in tok:
                 key, value = tok[2:].split("=", 1)
                 options[key] = value
@@ -238,6 +241,38 @@ class YesNAIPlugin(Star):
         params.setdefault("steps", int(self.config.get("default_steps", 28) or 28))
         params.setdefault("n_samples", int(self.config.get("default_n_samples", 1) or 1))
         return params
+
+    @staticmethod
+    def _apply_v4_defaults(
+        params: dict[str, Any],
+        positive: str,
+        negative: str,
+    ) -> None:
+        """按 NovelAI V4 模型补全兼容参数。"""
+        params.setdefault("params_version", 3)
+        params.setdefault("use_coords", False)
+        params.setdefault("legacy_v3_extend", False)
+        params.setdefault("legacy_uc", False)
+        params.setdefault("dynamic_thresholding", False)
+        params.setdefault("controlnet_strength", 1.0)
+        params.setdefault("normalize_reference_strength_multiple", True)
+        params.setdefault("deliberate_euler_ancestral_bug", False)
+        params.setdefault("prefer_brownian", True)
+        params.setdefault("v4_prompt", {
+            "caption": {
+                "base_caption": positive,
+                "char_captions": [],
+            },
+            "use_coords": False,
+            "use_order": True,
+        })
+        params.setdefault("v4_negative_prompt", {
+            "caption": {
+                "base_caption": negative or "",
+                "char_captions": [],
+            },
+            "legacy_uc": False,
+        })
 
     def _compose_negative_prompt(
         self, options: dict[str, Any], nsfw_enabled: bool | None = None
@@ -439,33 +474,60 @@ class YesNAIPlugin(Star):
 
     @staticmethod
     def _normalize_reference_image(base64_image: str) -> str:
-        """把角色参考图处理成 NovelAI v4 支持的尺寸/格式。
-
-        角色参考要求 1024x1536、1536x1024 或 1472x1472（黑边填充）。
-        这里按方向选择 1024x1536 / 1536x1024，等比缩放后黑边填充并转 JPEG。
-        PIL 不可用或处理失败时回退原图，避免阻塞生图流程。
-        """
+        """把角色参考图按 NovelAI SDK 规则归一化为 1024x1536 黑边 PNG。"""
         try:
             import io
 
             from PIL import Image as PILImage
 
-            raw = base64.b64decode(base64_image)
-            img = PILImage.open(io.BytesIO(raw))
-            img = img.convert("RGB")
-            width, height = img.size
-            target = (1536, 1024) if width >= height else (1024, 1536)
-            img.thumbnail(target, PILImage.LANCZOS)
-            canvas = PILImage.new("RGB", target, (0, 0, 0))
+            # 兼容 data URI，例如 data:image/png;base64,xxxx
+            if base64_image.startswith("data:") and "," in base64_image:
+                base64_image = base64_image.split(",", 1)[1]
+            raw = base64.b64decode(base64_image, validate=True)
+            with PILImage.open(io.BytesIO(raw)) as source:
+                source.load()
+                image = source.convert("RGB")
+        except Exception as exc:
+            raise YesNAIError(
+                f"角色参考图预处理失败: {str(exc)[:80]}"
+            ) from exc
+
+        try:
+            target_width, target_height = 1024, 1536
+            source_width, source_height = image.size
+            source_ratio = source_width / source_height
+            target_ratio = target_width / target_height
+            if source_ratio > target_ratio:
+                resized_width = target_width
+                resized_height = max(1, int(target_width / source_ratio))
+            else:
+                resized_height = target_height
+                resized_width = max(1, int(target_height * source_ratio))
+
+            resized = image.resize(
+                (resized_width, resized_height),
+                PILImage.Resampling.LANCZOS,
+            )
+            canvas = PILImage.new("RGB", (target_width, target_height), (0, 0, 0))
             canvas.paste(
-                img,
-                ((target[0] - img.width) // 2, (target[1] - img.height) // 2),
+                resized,
+                (
+                    (target_width - resized_width) // 2,
+                    (target_height - resized_height) // 2,
+                ),
             )
             buf = io.BytesIO()
-            canvas.save(buf, format="JPEG", quality=90)
-            return base64.b64encode(buf.getvalue()).decode()
-        except Exception:
-            return base64_image
+            canvas.save(buf, format="PNG")
+            return base64.b64encode(buf.getvalue()).decode("ascii")
+        except Exception as exc:
+            raise YesNAIError(
+                f"角色参考图预处理失败: {str(exc)[:80]}"
+            ) from exc
+        finally:
+            try:
+                image.close()
+            except Exception:
+                pass
 
     def _save_images(self, images: list[str], image_format: str = "png") -> list[Path]:
         data_dir = self._data_dir()
@@ -577,7 +639,7 @@ class YesNAIPlugin(Star):
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
             "- `/ynai i2i <描述>`：图重绘（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过）\n"
-            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过、`-b` 同时参考画风）\n"
+            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译；`-nt` 跳过翻译、`-s` 纯画风、`-b` 角色+画风）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
             "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
@@ -647,7 +709,7 @@ class YesNAIPlugin(Star):
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
     <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过）</li>
-    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过、<code>-b</code> 同时参考画风）</li>
+    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译；<code>-nt</code> 跳过翻译、<code>-s</code> 纯画风、<code>-b</code> 角色+画风）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
     <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
@@ -749,6 +811,7 @@ class YesNAIPlugin(Star):
             params = self._build_parameters(options)
             if negative:
                 params["negative_prompt"] = negative
+            self._apply_v4_defaults(params, final_prompt, negative)
 
             model = str(
                 options.get("model")
@@ -883,7 +946,7 @@ class YesNAIPlugin(Star):
         options, prompt = self._parse_options(args)
         if not prompt:
             yield event.plain_result(
-                "用法：/ynai i2i <描述> [--strength 0.65] [--noise 0.1] "
+                "用法：/ynai i2i <描述> [--strength 0.5] [--noise 0.0] "
                 "[--model 模型] [--size 832x1216] [-nt]"
             )
             return
@@ -929,29 +992,13 @@ class YesNAIPlugin(Star):
             negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
 
             params = self._build_parameters(options)
-            params["params_version"] = 3
-            params["legacy_uc"] = False
-            strength = float(options.get("strength", 0.65))
-            noise = float(options.get("noise", 0.1))
+            self._apply_v4_defaults(params, final_prompt, negative)
+            strength = float(options.get("strength", 0.5))
+            noise = float(options.get("noise", 0.0))
             params["image"] = base64_image
             params["strength"] = strength
             params["noise"] = noise
             params["img2img"] = {"color_correct": True, "strength": strength}
-            params["v4_prompt"] = {
-                "caption": {
-                    "base_caption": final_prompt,
-                    "char_captions": [],
-                },
-                "use_coords": False,
-                "use_order": True,
-            }
-            params["v4_negative_prompt"] = {
-                "caption": {
-                    "base_caption": negative,
-                    "char_captions": [],
-                },
-                "legacy_uc": False,
-            }
             if negative:
                 params["negative_prompt"] = negative
 
@@ -993,8 +1040,8 @@ class YesNAIPlugin(Star):
         options, prompt = self._parse_options(args)
         if not prompt:
             yield event.plain_result(
-                "用法：/ynai ref <描述> [--strength 0.6] [--model 模型] "
-                "[--size 832x1216] [-nt] [-b]"
+                "用法：/ynai ref <描述> [--strength 1.0] [--model 模型] "
+                "[--size 832x1216] [-nt] [-s] [-b]"
             )
             return
 
@@ -1040,19 +1087,22 @@ class YesNAIPlugin(Star):
             negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
 
             params = self._build_parameters(options)
-            params.setdefault("scale", 6.0)
-            params["params_version"] = 3
-            params["legacy_uc"] = False
+            params.setdefault("scale", 5.0)
+            self._apply_v4_defaults(params, final_prompt, negative)
             params["director_reference_images"] = [base64_image]
             params["director_reference_strength_values"] = [
-                float(options.get("strength", 0.6))
+                float(options.get("strength", 1.0))
             ]
             params["director_reference_secondary_strength_values"] = [
-                float(options.get("secondary_strength", 0.25))
+                float(options.get("secondary_strength", 0.5))
             ]
             params["director_reference_information_extracted"] = [1.0]
             reference_caption = (
-                "character&style" if options.get("both") else "character"
+                "character&style"
+                if options.get("both")
+                else "style"
+                if options.get("style")
+                else "character"
             )
             params["director_reference_descriptions"] = [
                 {
@@ -1063,21 +1113,6 @@ class YesNAIPlugin(Star):
                     "legacy_uc": False,
                 }
             ]
-            params["v4_prompt"] = {
-                "caption": {
-                    "base_caption": final_prompt,
-                    "char_captions": [],
-                },
-                "use_coords": False,
-                "use_order": True,
-            }
-            params["v4_negative_prompt"] = {
-                "caption": {
-                    "base_caption": negative,
-                    "char_captions": [],
-                },
-                "legacy_uc": False,
-            }
             if negative:
                 params["negative_prompt"] = negative
 
