@@ -44,7 +44,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.8.1",
+    "0.8.2",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -89,25 +89,25 @@ class YesNAIPlugin(Star):
         return ", ".join(tags)
 
     def _apply_nsfw_positive(self, prompt: str, nsfw_enabled: bool | None = None) -> str:
-        """根据 NSFW 开关在正面提示词中添加 nsfw/sfw。"""
+        """根据 NSFW 开关在正面提示词中添加 sfw；开启时不注入。"""
         enabled = (
             bool(self.config.get("nsfw_enabled", False))
             if nsfw_enabled is None
             else nsfw_enabled
         )
         if enabled:
-            return self._ensure_tag(prompt, "nsfw")
+            return prompt
         return self._ensure_tag(prompt, "sfw")
 
     def _apply_nsfw_negative(self, prompt: str, nsfw_enabled: bool | None = None) -> str:
-        """根据 NSFW 开关在负面提示词中添加 nsfw/sfw。"""
+        """根据 NSFW 开关在负面提示词中添加 nsfw；开启时不注入。"""
         enabled = (
             bool(self.config.get("nsfw_enabled", False))
             if nsfw_enabled is None
             else nsfw_enabled
         )
         if enabled:
-            return self._ensure_tag(prompt, "sfw")
+            return prompt
         return self._ensure_tag(prompt, "nsfw")
 
     async def _get_nsfw_enabled(self, event: AstrMessageEvent) -> bool:
