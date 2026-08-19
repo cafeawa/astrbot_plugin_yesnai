@@ -137,7 +137,7 @@ class YesNAIPlugin(Star):
 
         支持：
         -t / --translate
-        --no-translate
+        -nt / --no-translate
         --model, --size, --steps, --scale, --seed, --n, --sampler, --negative
         返回 (options, 去除参数后的提示词)。
         """
@@ -165,7 +165,7 @@ class YesNAIPlugin(Star):
             tok = tokens[i]
             if tok in ("-t", "--translate"):
                 options["translate"] = True
-            elif tok == "--no-translate":
+            elif tok in ("-nt", "--no-translate"):
                 options["translate"] = False
             elif tok.startswith("--") and "=" in tok:
                 key, value = tok[2:].split("=", 1)
@@ -574,7 +574,7 @@ class YesNAIPlugin(Star):
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
             "- `/ynai i2i <描述>`：图重绘（需引用图片）\n"
-            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `--no-translate`）\n"
+            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `-nt` 跳过）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
             "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
@@ -644,7 +644,7 @@ class YesNAIPlugin(Star):
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
     <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片）</li>
-    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>--no-translate</code>）</li>
+    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>-nt</code> 跳过）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
     <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
@@ -947,7 +947,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai ref <描述> [--strength 0.6] [--model 模型] "
-                "[--size 832x1216] [--no-translate]"
+                "[--size 832x1216] [-nt]"
             )
             return
 
