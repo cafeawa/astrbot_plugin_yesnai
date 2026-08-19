@@ -324,11 +324,21 @@ class YesNAIPlugin(Star):
         except Exception:
             return None
 
+        def is_component(comp, kind: str) -> bool:
+            """判断消息组件类型，兼容 ComponentType 枚举和字符串。"""
+            ctype = getattr(comp, "type", None)
+            if ctype is None:
+                return False
+            raw = getattr(ctype, "value", ctype)
+            return str(raw).lower() == kind.lower() or str(ctype).lower() == (
+                f"componenttype.{kind.lower()}"
+            )
+
         def find_image(components) -> Any | None:
             for comp in components or []:
-                if isinstance(comp, Image) or str(getattr(comp, "type", "")) == "image":
+                if isinstance(comp, Image) or is_component(comp, "image"):
                     return comp
-                if str(getattr(comp, "type", "")) == "reply":
+                if is_component(comp, "reply"):
                     nested = find_image(getattr(comp, "chain", None))
                     if nested:
                         return nested
