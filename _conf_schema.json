@@ -75,10 +75,10 @@
     "hint": "每项格式：名称||画师串，例如 我的画师||artist_name, artist_style。ID 按列表顺序自动生成 1、2、3...；也可用 /ynai artist add 添加"
   },
   "nsfw_enabled": {
-    "description": "是否允许 NSFW 内容",
+    "description": "全局默认 NSFW 开关",
     "type": "bool",
     "default": false,
-    "hint": "关闭时正面加 sfw、负面加 nsfw；开启时正面加 nsfw、负面加 sfw。管理员可通过 /ynai nsfw 命令切换"
+    "hint": "关闭时正面加 sfw、负面加 nsfw；开启时正面加 nsfw、负面加 sfw。管理员可通过 /ynai nsfw on/off 按会话覆盖，/ynai nsfw reset 恢复全局默认"
   },
   "llm_translation_enabled": {
     "description": "是否启用 LLM 翻译 Tag 生成",

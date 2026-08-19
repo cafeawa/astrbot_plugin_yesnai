@@ -6,7 +6,7 @@
 - /ynai model              查看可用模型
 - /ynai artist             管理画师串
 - /ynai preset             查看/设置预设正反提示词（仅管理员）
-- /ynai nsfw               查看/切换 NSFW 开关
+- /ynai nsfw               查看/切换 NSFW 开关（按会话）
 
 管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作。
 """
@@ -44,7 +44,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.8.0",
+    "0.8.1",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -88,17 +88,41 @@ class YesNAIPlugin(Star):
             tags.append(tag)
         return ", ".join(tags)
 
-    def _apply_nsfw_positive(self, prompt: str) -> str:
+    def _apply_nsfw_positive(self, prompt: str, nsfw_enabled: bool | None = None) -> str:
         """根据 NSFW 开关在正面提示词中添加 nsfw/sfw。"""
-        if self.config.get("nsfw_enabled", False):
+        enabled = (
+            bool(self.config.get("nsfw_enabled", False))
+            if nsfw_enabled is None
+            else nsfw_enabled
+        )
+        if enabled:
             return self._ensure_tag(prompt, "nsfw")
         return self._ensure_tag(prompt, "sfw")
 
-    def _apply_nsfw_negative(self, prompt: str) -> str:
+    def _apply_nsfw_negative(self, prompt: str, nsfw_enabled: bool | None = None) -> str:
         """根据 NSFW 开关在负面提示词中添加 nsfw/sfw。"""
-        if self.config.get("nsfw_enabled", False):
+        enabled = (
+            bool(self.config.get("nsfw_enabled", False))
+            if nsfw_enabled is None
+            else nsfw_enabled
+        )
+        if enabled:
             return self._ensure_tag(prompt, "sfw")
         return self._ensure_tag(prompt, "nsfw")
+
+    async def _get_nsfw_enabled(self, event: AstrMessageEvent) -> bool:
+        """获取当前会话的 NSFW 状态；会话未单独设置时回退到全局配置。"""
+        try:
+            value = await self.get_kv_data(
+                f"nsfw:{event.unified_msg_origin}", None
+            )
+            if value is not None:
+                if isinstance(value, bool):
+                    return value
+                return str(value).strip().lower() in ("1", "true", "yes", "on")
+        except Exception:
+            pass
+        return bool(self.config.get("nsfw_enabled", False))
 
     def _get_client(self) -> YesNAIClient:
         return YesNAIClient(
@@ -207,14 +231,16 @@ class YesNAIPlugin(Star):
         params.setdefault("n_samples", int(self.config.get("default_n_samples", 1) or 1))
         return params
 
-    def _compose_negative_prompt(self, options: dict[str, Any]) -> str:
+    def _compose_negative_prompt(
+        self, options: dict[str, Any], nsfw_enabled: bool | None = None
+    ) -> str:
         preset = str(self.config.get("preset_negative_prompt", "")).strip()
         extra = str(options.get("negative", "")).strip()
         if preset and extra:
             result = f"{preset}, {extra}"
         else:
             result = preset or extra
-        return self._apply_nsfw_negative(result)
+        return self._apply_nsfw_negative(result, nsfw_enabled)
 
     async def _get_selected_artist_prompt(self, event: AstrMessageEvent) -> str:
         artist_id = await self.get_kv_data(f"artist:{event.unified_msg_origin}", None)
@@ -289,7 +315,12 @@ class YesNAIPlugin(Star):
                 return artist
         return None
 
-    def _compose_positive_prompt(self, prompt: str, artist_prompt: str = "") -> str:
+    def _compose_positive_prompt(
+        self,
+        prompt: str,
+        artist_prompt: str = "",
+        nsfw_enabled: bool | None = None,
+    ) -> str:
         parts: list[str] = []
         if artist_prompt:
             parts.append(artist_prompt)
@@ -298,7 +329,7 @@ class YesNAIPlugin(Star):
             parts.append(preset)
         if prompt:
             parts.append(prompt)
-        return self._apply_nsfw_positive(", ".join(parts))
+        return self._apply_nsfw_positive(", ".join(parts), nsfw_enabled)
 
     async def _translate_to_tags(
         self, event: AstrMessageEvent, text: str
@@ -408,7 +439,7 @@ class YesNAIPlugin(Star):
             "- `/ynai model`：查看可用模型\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
-            "- `/ynai nsfw on/off/status`：NSFW 开关\n\n"
+            "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
             "## 生图可选参数\n"
             "`--model`、`--size 832x1216`、`--steps`、`--scale`、"
             "`--seed`、`--n`、`--sampler`、`--negative=\"lowres, bad hands\"`"
@@ -476,7 +507,7 @@ class YesNAIPlugin(Star):
     <li><code>/ynai model</code>：查看可用模型</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
-    <li><code>/ynai nsfw on/off/status</code>：NSFW 开关</li>
+    <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
   </ul>
   <h2>生图可选参数</h2>
   <ul>
@@ -548,8 +579,11 @@ class YesNAIPlugin(Star):
 
         try:
             artist_prompt = await self._get_selected_artist_prompt(event)
-            final_prompt = self._compose_positive_prompt(prompt, artist_prompt)
-            negative = self._compose_negative_prompt(options)
+            nsfw_enabled = await self._get_nsfw_enabled(event)
+            final_prompt = self._compose_positive_prompt(
+                prompt, artist_prompt, nsfw_enabled=nsfw_enabled
+            )
+            negative = self._compose_negative_prompt(options, nsfw_enabled=nsfw_enabled)
             params = self._build_parameters(options)
             if negative:
                 params["negative_prompt"] = negative
@@ -613,8 +647,11 @@ class YesNAIPlugin(Star):
 
         try:
             artist_prompt = await self._get_selected_artist_prompt(event)
-            final_prompt = self._compose_positive_prompt(tags, artist_prompt)
-            negative = self._compose_negative_prompt({})
+            nsfw_enabled = await self._get_nsfw_enabled(event)
+            final_prompt = self._compose_positive_prompt(
+                tags, artist_prompt, nsfw_enabled=nsfw_enabled
+            )
+            negative = self._compose_negative_prompt({}, nsfw_enabled=nsfw_enabled)
             params = self._build_parameters({})
             if negative:
                 params["negative_prompt"] = negative
@@ -864,24 +901,40 @@ class YesNAIPlugin(Star):
 
     async def _ynai_nsfw(self, event: AstrMessageEvent, args: str):
         action = args.strip().lower() if args.strip() else "status"
+        kv_key = f"nsfw:{event.unified_msg_origin}"
 
         if action == "status":
-            state = "开启" if self.config.get("nsfw_enabled", False) else "关闭"
-            yield event.plain_result(f"当前 NSFW 开关：{state}")
+            session_value = await self.get_kv_data(kv_key, None)
+            if session_value is not None:
+                session_enabled = (
+                    session_value
+                    if isinstance(session_value, bool)
+                    else str(session_value).strip().lower()
+                    in ("1", "true", "yes", "on")
+                )
+                state = "开启" if session_enabled else "关闭"
+                yield event.plain_result(f"当前会话 NSFW：{state}（本会话单独设置）")
+            else:
+                state = "开启" if self.config.get("nsfw_enabled", False) else "关闭"
+                yield event.plain_result(f"当前 NSFW（全局默认）：{state}")
+            return
+
+        if action == "reset":
+            await self.delete_kv_data(kv_key)
+            yield event.plain_result("已清除当前会话的 NSFW 单独设置，恢复全局默认")
             return
 
         if action not in ("on", "off"):
-            yield event.plain_result("用法：/ynai nsfw on|off|status")
+            yield event.plain_result("用法：/ynai nsfw on|off|status|reset")
             return
 
         if not self._is_admin(event):
             yield event.plain_result("只有管理员可以修改 NSFW 开关")
             return
 
-        self.config["nsfw_enabled"] = action == "on"
-        self.config.save_config()
+        await self.put_kv_data(kv_key, action == "on")
         yield event.plain_result(
-            f"NSFW 开关已{'开启' if action == 'on' else '关闭'}"
+            f"当前会话 NSFW 开关已{'开启' if action == 'on' else '关闭'}"
         )
 
     # ---------------------------------------------------------------

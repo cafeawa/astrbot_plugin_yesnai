@@ -8,7 +8,7 @@
 - ✅ `/ynai0 <提示词>` 直接生图（不做 LLM 翻译）
 - ✅ `/ynai artist` 管理画师串，生图时自动拼接到提示词前面
 - ✅ `/ynai preset` 查看/设置预设正反提示词（仅管理员）
-- ✅ `/ynai nsfw` NSFW 开关（`on/off` 仅管理员）
+- ✅ `/ynai nsfw` NSFW 开关（按会话，`on/off/reset` 仅管理员）
 - ✅ Agent 工具 `ynai_generate`：LLM 传入 tags，使用默认生图配置生图并发送
 - ✅ `/ynai model` 查看可用模型
 - ✅ 管理员设置：画师串增删、预设命令、NSFW 开关仅管理员可操作
@@ -41,7 +41,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `preset_positive_prompt` | 预设正面提示词，生成时自动拼接到用户提示词前面 |
 | `preset_negative_prompt` | 预设负面提示词，生成时作为 `negative_prompt` |
 | `artists` | 画师串预设列表，每项格式 `名称\|\|画师串`，ID 按顺序自动生成（也可用 `/ynai artist add` 添加） |
-| `nsfw_enabled` | 是否允许 NSFW 内容，默认关闭 |
+| `nsfw_enabled` | 全局默认 NSFW 开关，默认关闭；可按会话用 `/ynai nsfw` 覆盖 |
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
 | `show_tags` | 生图时是否展示 Tag/最终提示词，默认开启 |
 | `t2i_url` | 自定义文转图服务地址；留空则 `/ynai help` 不使用文转图，直接返回文本 |
@@ -87,7 +87,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 我的画师||artist_name, artist_style
 ```
 
-ID 会自动按列表顺序生成。选择画师串后，生成时会自动把它拼接到最终提示词**前面**：
+ID 会自动按列表顺序生成。画师串选择**按会话保存**，不同会话可以选不同画师串。选择后，生成时会自动把它拼接到最终提示词**前面**：
 
 ```
 画师串, 预设正面提示词, 用户提示词
@@ -105,10 +105,13 @@ ID 会自动按列表顺序生成。选择画师串后，生成时会自动把�
 
 ```
 /ynai nsfw status
-/ynai nsfw on    # 仅管理员
-/ynai nsfw off   # 仅管理员
+/ynai nsfw on      # 仅管理员，按当前会话开启
+/ynai nsfw off     # 仅管理员，按当前会话关闭
+/ynai nsfw reset   # 仅管理员，清除当前会话设置，恢复全局默认
 ```
 
+> NSFW 按会话生效：每个会话可以单独设置，未设置时使用全局默认。
+>
 > NSFW 开关不再拦截关键词，而是通过 Tag 控制：
 > - 关闭（安全模式）：正面提示词自动添加 `sfw`，负面提示词自动添加 `nsfw`
 > - 开启（NSFW 模式）：正面提示词自动添加 `nsfw`，负面提示词自动添加 `sfw`
