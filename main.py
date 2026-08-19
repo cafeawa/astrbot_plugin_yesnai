@@ -44,7 +44,7 @@ _COMMAND_NAMES = {
     "astrbot_plugin_yesnai",
     "cafe_awa_",
     "调用 YesNovelAI / YesNAI API 生成图像",
-    "0.9.0",
+    "0.9.2",
 )
 class YesNAIPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -461,7 +461,7 @@ class YesNAIPlugin(Star):
             "- `/ynai0 <提示词>`：直接生图\n\n"
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
-            "- `/ynai img2img <描述>`：图重绘（需引用图片）\n"
+            "- `/ynai i2i <描述>`：图重绘（需引用图片）\n"
             "- `/ynai ref <描述>`：参考角色生成（需引用图片）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
@@ -531,7 +531,7 @@ class YesNAIPlugin(Star):
   <h2>其他命令</h2>
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
-    <li><code>/ynai img2img &lt;描述&gt;</code>：图重绘（需引用图片）</li>
+    <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片）</li>
     <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
@@ -751,7 +751,7 @@ class YesNAIPlugin(Star):
         options, prompt = self._parse_options(args)
         if not prompt:
             yield event.plain_result(
-                "用法：/ynai img2img <描述> [--strength 0.65] [--noise 0.1] "
+                "用法：/ynai i2i <描述> [--strength 0.65] [--noise 0.1] "
                 "[--model 模型] [--size 832x1216]"
             )
             return
@@ -759,7 +759,7 @@ class YesNAIPlugin(Star):
         image = await self._get_referenced_image(event)
         if not image:
             yield event.plain_result(
-                "请回复/引用一张图片后再使用 /ynai img2img <描述>"
+                "请回复/引用一张图片后再使用 /ynai i2i <描述>"
             )
             return
 
