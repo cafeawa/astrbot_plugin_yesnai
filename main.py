@@ -758,6 +758,10 @@ class YesNAIPlugin(Star):
                 )
             else:
                 generate_msg = f"正在生成...\n模型: {model}"
+            if self.config.get("show_api_prompt", False):
+                generate_msg += f"\n[API Tag] {final_prompt}"
+                if negative:
+                    generate_msg += f"\n[API Negative] {negative}"
             yield event.plain_result(generate_msg)
 
             client = self._get_client()
@@ -918,7 +922,12 @@ class YesNAIPlugin(Star):
                 or self.config.get("default_model", "nai-diffusion-4-5-full")
             )
 
-            yield event.plain_result(f"正在重绘...\n模型: {model}")
+            generate_msg = f"正在重绘...\n模型: {model}"
+            if self.config.get("show_api_prompt", False):
+                generate_msg += f"\n[API Tag] {final_prompt}"
+                if negative:
+                    generate_msg += f"\n[API Negative] {negative}"
+            yield event.plain_result(generate_msg)
 
             client = self._get_client()
             resp = await client.generate_image(
@@ -1036,7 +1045,12 @@ class YesNAIPlugin(Star):
                 or self.config.get("default_model", "nai-diffusion-4-5-full")
             )
 
-            yield event.plain_result(f"正在使用参考角色生成...\n模型: {model}")
+            generate_msg = f"正在使用参考角色生成...\n模型: {model}"
+            if self.config.get("show_api_prompt", False):
+                generate_msg += f"\n[API Tag] {final_prompt}"
+                if negative:
+                    generate_msg += f"\n[API Negative] {negative}"
+            yield event.plain_result(generate_msg)
 
             client = self._get_client()
             resp = await client.generate_image(

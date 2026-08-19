@@ -92,6 +92,12 @@
     "default": true,
     "hint": "开启后会在生成前显示最终 Prompt；关闭后只显示模型和生成状态"
   },
+  "show_api_prompt": {
+    "description": "生图前展示发送给 API 的最终 Tag（调试用）",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后会在调用 API 前显示最终正向/负向提示词；默认关闭"
+  },
   "t2i_url": {
     "description": "自定义文转图服务地址",
     "type": "string",
