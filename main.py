@@ -137,6 +137,7 @@ class YesNAIPlugin(Star):
 
         支持：
         -t / --translate
+        --no-translate
         --model, --size, --steps, --scale, --seed, --n, --sampler, --negative
         返回 (options, 去除参数后的提示词)。
         """
@@ -164,6 +165,8 @@ class YesNAIPlugin(Star):
             tok = tokens[i]
             if tok in ("-t", "--translate"):
                 options["translate"] = True
+            elif tok == "--no-translate":
+                options["translate"] = False
             elif tok.startswith("--") and "=" in tok:
                 key, value = tok[2:].split("=", 1)
                 options[key] = value
@@ -571,7 +574,7 @@ class YesNAIPlugin(Star):
             "## 其他命令\n"
             "- `/ynai model`：查看可用模型\n"
             "- `/ynai i2i <描述>`：图重绘（需引用图片）\n"
-            "- `/ynai ref <描述>`：参考角色生成（需引用图片）\n"
+            "- `/ynai ref <描述>`：参考角色生成（需引用图片，默认 LLM 翻译，可加 `--no-translate`）\n"
             "- `/ynai artist list/set/add/del/clear`：管理画师串\n"
             "- `/ynai preset show/positive/negative`：预设正反提示词（管理员）\n"
             "- `/ynai nsfw on/off/status/reset`：NSFW 开关（按会话）\n\n"
@@ -641,7 +644,7 @@ class YesNAIPlugin(Star):
   <ul>
     <li><code>/ynai model</code>：查看可用模型</li>
     <li><code>/ynai i2i &lt;描述&gt;</code>：图重绘（需引用图片）</li>
-    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片）</li>
+    <li><code>/ynai ref &lt;描述&gt;</code>：参考角色生成（需引用图片，默认 LLM 翻译，可加 <code>--no-translate</code>）</li>
     <li><code>/ynai artist list/set/add/del/clear</code>：管理画师串</li>
     <li><code>/ynai preset show/positive/negative</code>：预设正反提示词（管理员）</li>
     <li><code>/ynai nsfw on/off/status/reset</code>：NSFW 开关（按会话）</li>
@@ -944,7 +947,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai ref <描述> [--strength 0.6] [--model 模型] "
-                "[--size 832x1216]"
+                "[--size 832x1216] [--no-translate]"
             )
             return
 
@@ -954,6 +957,25 @@ class YesNAIPlugin(Star):
                 "请回复/引用一张图片后再使用 /ynai ref <描述>"
             )
             return
+
+        if options.get("translate", True):
+            if not self.config.get("llm_translation_enabled", True):
+                yield event.plain_result(
+                    "LLM 翻译 Tag 功能未启用，请管理员在插件配置中开启 "
+                    "llm_translation_enabled"
+                )
+                return
+            yield event.plain_result("正在用 LLM 翻译 Tag...")
+            try:
+                ok, translated = await self._translate_to_tags(event, prompt)
+            except Exception as exc:
+                logger.exception("LLM 翻译出现未预期错误")
+                yield event.plain_result(f"LLM 翻译出现未预期错误: {exc}")
+                return
+            if not ok:
+                yield event.plain_result(translated)
+                return
+            prompt = translated
 
         try:
             base64_image = await image.convert_to_base64()
