@@ -48,6 +48,44 @@ class YesNAIClient:
     def _url(self, path: str) -> str:
         return f"{self.api_base}{path}"
 
+    @staticmethod
+    def _extract_api_error(data: Any) -> str | None:
+        """从 JSON 响应中提取常见的业务错误信息，没有则返回 None。"""
+        if not isinstance(data, dict):
+            return "响应不是 JSON 对象"
+        if data.get("success") is False:
+            return str(data.get("message") or data.get("msg") or "API 返回失败状态")
+        if data.get("status") in ("error", "failed", "fail", False, "false"):
+            return str(data.get("message") or data.get("msg") or "API 返回错误状态")
+        for key in ("error", "detail"):
+            value = data.get(key)
+            if value:
+                if isinstance(value, str) and value.strip().lower() in (
+                    "ok",
+                    "success",
+                    "succeeded",
+                ):
+                    continue
+                if isinstance(value, dict):
+                    value = (
+                        value.get("message")
+                        or value.get("msg")
+                        or value.get("detail")
+                        or value
+                    )
+                elif isinstance(value, list):
+                    parts = []
+                    for item in value:
+                        if isinstance(item, dict):
+                            parts.append(
+                                str(item.get("msg") or item.get("message") or item)
+                            )
+                        else:
+                            parts.append(str(item))
+                    value = "；".join(parts)
+                return str(value)
+        return None
+
     async def _request_json(
         self, method: str, path: str, **kwargs: Any
     ) -> dict[str, Any]:
@@ -67,11 +105,19 @@ class YesNAIClient:
                             f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
                         )
                     try:
-                        return json.loads(body)
+                        data = json.loads(body)
                     except json.JSONDecodeError as exc:
                         raise YesNAIError(
                             f"{method} {path} 返回非 JSON 响应: {body[:500]}"
                         ) from exc
+                    if not isinstance(data, dict):
+                        raise YesNAIError(
+                            f"{method} {path} 返回 JSON 不是对象: {body[:500]}"
+                        )
+                    error_msg = self._extract_api_error(data)
+                    if error_msg:
+                        raise YesNAIError(f"{method} {path} 失败: {error_msg}")
+                    return data
         except asyncio.TimeoutError as exc:
             raise YesNAIError(
                 f"{method} {path} 请求超时（{self.timeout}s），"
@@ -103,11 +149,19 @@ class YesNAIClient:
                             f"{method} {path} 失败: HTTP {resp.status} - {body[:500]}"
                         )
                     try:
-                        return json.loads(body)
+                        data = json.loads(body)
                     except json.JSONDecodeError as exc:
                         raise YesNAIError(
                             f"{method} {path} 返回非 JSON 响应: {body[:500]}"
                         ) from exc
+                    if not isinstance(data, dict):
+                        raise YesNAIError(
+                            f"{method} {path} 返回 JSON 不是对象: {body[:500]}"
+                        )
+                    error_msg = self._extract_api_error(data)
+                    if error_msg:
+                        raise YesNAIError(f"{method} {path} 失败: {error_msg}")
+                    return data
         except asyncio.TimeoutError as exc:
             raise YesNAIError(
                 f"{method} {path} 请求超时（{self.timeout}s），"
@@ -136,7 +190,28 @@ class YesNAIClient:
                             f"{method} {path} 失败: HTTP {resp.status} - "
                             f"{body[:500].decode('utf-8', errors='ignore')}"
                         )
-                    return body, resp.headers.get("Content-Type", "")
+                    content_type = resp.headers.get("Content-Type", "")
+                    if (
+                        content_type
+                        and content_type.split(";")[0].strip().lower()
+                        == "application/json"
+                    ):
+                        try:
+                            data = json.loads(
+                                body.decode("utf-8", errors="ignore")
+                            )
+                        except json.JSONDecodeError:
+                            data = None
+                        if isinstance(data, dict):
+                            error_msg = self._extract_api_error(data)
+                            if error_msg:
+                                raise YesNAIError(
+                                    f"{method} {path} 失败: {error_msg}"
+                                )
+                            raise YesNAIError(
+                                f"{method} {path} 返回 JSON 而不是二进制数据"
+                            )
+                    return body, content_type
         except asyncio.TimeoutError as exc:
             raise YesNAIError(
                 f"{method} {path} 请求超时（{self.timeout}s），"
@@ -147,7 +222,10 @@ class YesNAIClient:
 
     async def get_models(self) -> list[dict[str, Any]]:
         data = await self._request_json("GET", "/v1/models")
-        return data.get("data", [])
+        models = data.get("data") or []
+        if not isinstance(models, list):
+            raise YesNAIError("GET /v1/models 返回的 data 字段不是列表")
+        return models
 
     async def generate_image(
         self,
@@ -301,30 +379,40 @@ class YesNAIClient:
         self, payload: dict[str, Any]
     ):
         """调用 Native 流式生成接口，按长度前缀解析 MessagePack 帧并逐个返回。"""
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=self.timeout)
-        ) as session:
-            async with session.post(
-                self._url("/native/ai/generate-image-stream"),
-                headers=self._headers(),
-                json=payload,
-            ) as resp:
-                if resp.status >= 400:
-                    body = await resp.read()
-                    raise YesNAIError(
-                        "POST /native/ai/generate-image-stream 失败: "
-                        f"HTTP {resp.status} - "
-                        f"{body[:500].decode('utf-8', errors='ignore')}"
-                    )
-                data = await resp.read()
-                offset = 0
-                while offset + 4 <= len(data):
-                    length = int.from_bytes(data[offset : offset + 4], "big")
-                    offset += 4
-                    if offset + length > len(data):
-                        break
-                    yield data[offset : offset + length]
-                    offset += length
+        try:
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            ) as session:
+                async with session.post(
+                    self._url("/native/ai/generate-image-stream"),
+                    headers=self._headers(),
+                    json=payload,
+                ) as resp:
+                    if resp.status >= 400:
+                        body = await resp.read()
+                        raise YesNAIError(
+                            "POST /native/ai/generate-image-stream 失败: "
+                            f"HTTP {resp.status} - "
+                            f"{body[:500].decode('utf-8', errors='ignore')}"
+                        )
+                    data = await resp.read()
+                    offset = 0
+                    while offset + 4 <= len(data):
+                        length = int.from_bytes(data[offset : offset + 4], "big")
+                        offset += 4
+                        if offset + length > len(data):
+                            break
+                        yield data[offset : offset + length]
+                        offset += length
+        except asyncio.TimeoutError as exc:
+            raise YesNAIError(
+                f"POST /native/ai/generate-image-stream 请求超时"
+                f"（{self.timeout}s），请调大插件配置里的 timeout"
+            ) from exc
+        except aiohttp.ClientError as exc:
+            raise YesNAIError(
+                f"POST /native/ai/generate-image-stream 网络错误: {exc}"
+            ) from exc
 
     async def native_subscription(self) -> dict[str, Any]:
         return await self._request_json("GET", "/native/user/subscription")

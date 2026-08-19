@@ -416,10 +416,69 @@ class YesNAIPlugin(Star):
         paths: list[Path] = []
         for b64 in images:
             raw = base64.b64decode(b64)
+            if not raw:
+                raise ValueError("图片数据为空")
             path = data_dir / f"yesnai_{uuid.uuid4().hex}.{image_format}"
             path.write_bytes(raw)
             paths.append(path)
         return paths
+
+    @staticmethod
+    def _extract_generated_images(
+        resp: dict[str, Any],
+    ) -> tuple[list[str], str]:
+        """从生图响应中安全提取 base64 图片列表和格式。
+
+        响应结构不对、缺少图片、或图片数据非法时抛出 YesNAIError，
+        并尽量带上 API 返回的错误信息。
+        """
+        if not isinstance(resp, dict):
+            raise YesNAIError("生图接口返回的数据格式不正确")
+
+        def server_message() -> str:
+            for key in ("error", "detail", "message", "msg"):
+                value = resp.get(key)
+                if value:
+                    if isinstance(value, dict):
+                        value = (
+                            value.get("message")
+                            or value.get("msg")
+                            or value.get("detail")
+                            or value
+                        )
+                    return str(value)
+            if resp.get("status") in ("error", "failed", "fail", False, "false"):
+                return "API 返回错误状态"
+            return ""
+
+        images = resp.get("images")
+        if not isinstance(images, list):
+            raise YesNAIError(server_message() or "生图接口返回的 images 字段不是列表")
+        if not images:
+            raise YesNAIError(server_message() or "生图接口未返回图片")
+
+        cleaned: list[str] = []
+        for item in images:
+            if not isinstance(item, str):
+                raise YesNAIError("生图接口返回的图片数据格式不正确")
+            # 兼容 JSON 中可能出现的换行/空白、URL-safe base64 和省略 padding
+            compact = "".join(item.split()).replace("-", "+").replace("_", "/")
+            if not compact:
+                raise YesNAIError("生图接口返回的图片数据为空")
+            compact += "=" * (-len(compact) % 4)
+            try:
+                raw = base64.b64decode(compact, validate=True)
+            except Exception as exc:
+                raise YesNAIError("生图接口返回的图片 base64 数据无效") from exc
+            if not raw:
+                raise YesNAIError("生图接口返回的图片数据为空")
+            cleaned.append(compact)
+
+        fmt = str(resp.get("image_format") or "png")
+        if "/" in fmt:
+            fmt = fmt.rsplit("/", 1)[-1]
+        fmt = "".join(ch for ch in fmt if ch.isalnum()).lower() or "png"
+        return cleaned, fmt
 
     def _quote_payload(
         self,
@@ -635,15 +694,10 @@ class YesNAIPlugin(Star):
                 input_text=final_prompt,
                 parameters=params,
             )
-            images = resp.get("images") or []
-            if not images:
-                yield event.plain_result(f"生成失败或没有返回图片：{resp}")
-                return
-
-            fmt = str(resp.get("image_format", "png"))
+            images, fmt = self._extract_generated_images(resp)
             paths = self._save_images(images, fmt)
-            job = resp.get("job", {})
-            cost = job.get("cost_gems", "?")
+            job = resp.get("job")
+            cost = job.get("cost_gems", "?") if isinstance(job, dict) else "?"
             yield event.plain_result(f"生成完成，消耗 {cost} Gems")
             for path in paths:
                 yield event.image_result(str(path))
@@ -693,17 +747,10 @@ class YesNAIPlugin(Star):
                 input_text=final_prompt,
                 parameters=params,
             )
-            images = resp.get("images") or []
-            if not images:
-                return json.dumps(
-                    {"status": "error", "message": "生图接口未返回图片"},
-                    ensure_ascii=False,
-                )
-
-            fmt = str(resp.get("image_format", "png"))
+            images, fmt = self._extract_generated_images(resp)
             paths = self._save_images(images, fmt)
-            job = resp.get("job", {})
-            cost = job.get("cost_gems", "?")
+            job = resp.get("job")
+            cost = job.get("cost_gems", "?") if isinstance(job, dict) else "?"
 
             from astrbot.api.message_components import Image, Plain
 
@@ -802,15 +849,10 @@ class YesNAIPlugin(Star):
                 parameters=params,
                 action="img2img",
             )
-            images = resp.get("images") or []
-            if not images:
-                yield event.plain_result(f"重绘失败或没有返回图片：{resp}")
-                return
-
-            fmt = str(resp.get("image_format", "png"))
+            images, fmt = self._extract_generated_images(resp)
             paths = self._save_images(images, fmt)
-            job = resp.get("job", {})
-            cost = job.get("cost_gems", "?")
+            job = resp.get("job")
+            cost = job.get("cost_gems", "?") if isinstance(job, dict) else "?"
             yield event.plain_result(f"重绘完成，消耗 {cost} Gems")
             for path in paths:
                 yield event.image_result(str(path))
@@ -891,15 +933,10 @@ class YesNAIPlugin(Star):
                 parameters=params,
                 action="generate",
             )
-            images = resp.get("images") or []
-            if not images:
-                yield event.plain_result(f"参考生成失败或没有返回图片：{resp}")
-                return
-
-            fmt = str(resp.get("image_format", "png"))
+            images, fmt = self._extract_generated_images(resp)
             paths = self._save_images(images, fmt)
-            job = resp.get("job", {})
-            cost = job.get("cost_gems", "?")
+            job = resp.get("job")
+            cost = job.get("cost_gems", "?") if isinstance(job, dict) else "?"
             yield event.plain_result(f"生成完成，消耗 {cost} Gems")
             for path in paths:
                 yield event.image_result(str(path))
@@ -911,7 +948,7 @@ class YesNAIPlugin(Star):
         try:
             client = self._get_client()
             models = await client.get_models()
-            if not models:
+            if not isinstance(models, list) or not models:
                 yield event.plain_result("没有获取到模型")
                 return
             text = "可用模型：\n" + "\n".join(
