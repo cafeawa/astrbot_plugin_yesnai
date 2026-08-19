@@ -391,11 +391,21 @@ class YesNAIPlugin(Star):
                 prompt=text,
                 system_prompt=system_prompt,
             )
+            if resp is None:
+                return False, "LLM 返回为空或响应格式不正确"
+            completion_text = getattr(resp, "completion_text", None)
+            if completion_text is None:
+                return False, "LLM 返回为空或响应格式不正确"
+            if not isinstance(completion_text, str):
+                logger.error(
+                    f"LLM 翻译响应格式不正确: {type(completion_text).__name__}"
+                )
+                return False, "LLM 翻译响应格式不正确"
+            tags = completion_text.strip()
         except Exception as exc:
             logger.error(f"LLM 翻译失败: {exc}")
             return False, f"LLM 翻译失败: {exc}"
 
-        tags = (resp.completion_text or "").strip()
         if not tags:
             return False, "LLM 返回为空"
         return True, tags
@@ -632,8 +642,22 @@ class YesNAIPlugin(Star):
             url = await self._render_help_via_t2i(t2i_url)
             yield event.image_result(url)
         except Exception as exc:
-            logger.error(f"自定义文转图服务渲染失败: {exc}")
+            logger.exception(f"自定义文转图服务渲染失败: {exc}")
             yield event.plain_result(self._ynai_help_text())
+
+    async def _run_safely(
+        self, event: AstrMessageEvent, generator
+    ):
+        """消费一个异步生成器，未知异常时记录堆栈并给用户友好提示。"""
+        try:
+            async for result in generator:
+                yield result
+        except YesNAIError as exc:
+            logger.error(f"YesNAI 命令失败: {exc}")
+            yield event.plain_result(f"操作失败: {exc}")
+        except Exception as exc:
+            logger.exception("YesNAI 命令出现未预期错误")
+            yield event.plain_result(f"操作失败: {exc}")
 
     # ---------------------------------------------------------------
     # 公共生成逻辑
@@ -658,7 +682,12 @@ class YesNAIPlugin(Star):
                 )
                 return
             yield event.plain_result("正在用 LLM 翻译 Tag...")
-            ok, translated = await self._translate_to_tags(event, prompt)
+            try:
+                ok, translated = await self._translate_to_tags(event, prompt)
+            except Exception as exc:
+                logger.exception("LLM 翻译出现未预期错误")
+                yield event.plain_result(f"LLM 翻译出现未预期错误: {exc}")
+                return
             if not ok:
                 yield event.plain_result(translated)
                 return
@@ -783,8 +812,14 @@ class YesNAIPlugin(Star):
                 },
                 ensure_ascii=False,
             )
-        except Exception as exc:
+        except YesNAIError as exc:
             logger.error(f"ynai_generate 工具生图失败: {exc}")
+            return json.dumps(
+                {"status": "error", "message": f"生图失败: {exc}"},
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            logger.exception("ynai_generate 工具生图出现未预期错误")
             return json.dumps(
                 {"status": "error", "message": f"生图失败: {exc}"},
                 ensure_ascii=False,
@@ -856,8 +891,11 @@ class YesNAIPlugin(Star):
             yield event.plain_result(f"重绘完成，消耗 {cost} Gems")
             for path in paths:
                 yield event.image_result(str(path))
-        except Exception as exc:
+        except YesNAIError as exc:
             logger.error(f"YesNAI 图重绘失败: {exc}")
+            yield event.plain_result(f"图重绘失败: {exc}")
+        except Exception as exc:
+            logger.exception("YesNAI 图重绘出现未预期错误")
             yield event.plain_result(f"图重绘失败: {exc}")
 
     async def _ynai_ref(self, event: AstrMessageEvent, args: str):
@@ -940,8 +978,11 @@ class YesNAIPlugin(Star):
             yield event.plain_result(f"生成完成，消耗 {cost} Gems")
             for path in paths:
                 yield event.image_result(str(path))
-        except Exception as exc:
+        except YesNAIError as exc:
             logger.error(f"YesNAI 参考角色生成失败: {exc}")
+            yield event.plain_result(f"参考角色生成失败: {exc}")
+        except Exception as exc:
+            logger.exception("YesNAI 参考角色生成出现未预期错误")
             yield event.plain_result(f"参考角色生成失败: {exc}")
 
     async def _ynai_model(self, event: AstrMessageEvent, args: str):
@@ -955,8 +996,11 @@ class YesNAIPlugin(Star):
                 str(m.get("id", "")) for m in models
             )
             yield event.plain_result(text)
-        except Exception as exc:
+        except YesNAIError as exc:
             logger.error(f"获取模型列表失败: {exc}")
+            yield event.plain_result(f"获取模型列表失败: {exc}")
+        except Exception as exc:
+            logger.exception("获取模型列表出现未预期错误")
             yield event.plain_result(f"获取模型列表失败: {exc}")
 
     async def _ynai_artist(self, event: AstrMessageEvent, args: str):
@@ -1171,7 +1215,9 @@ class YesNAIPlugin(Star):
         """YesNAI 主命令：/ynai <描述> 默认 LLM 翻译生图，/ynai model 等为子命令"""
         args = self._command_args(event)
         if not args:
-            async for result in self._ynai_help_card(event):
+            async for result in self._run_safely(
+                event, self._ynai_help_card(event)
+            ):
                 yield result
             return
 
@@ -1180,29 +1226,44 @@ class YesNAIPlugin(Star):
         sub_args = rest.strip()
 
         if sub in ("help", "h", "?"):
-            async for result in self._ynai_help_card(event):
+            async for result in self._run_safely(
+                event, self._ynai_help_card(event)
+            ):
                 yield result
         elif sub in ("model", "models", "m"):
-            async for result in self._ynai_model(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_model(event, sub_args)
+            ):
                 yield result
         elif sub in ("artist", "a"):
-            async for result in self._ynai_artist(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_artist(event, sub_args)
+            ):
                 yield result
         elif sub in ("preset", "p"):
-            async for result in self._ynai_preset(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_preset(event, sub_args)
+            ):
                 yield result
         elif sub in ("nsfw",):
-            async for result in self._ynai_nsfw(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_nsfw(event, sub_args)
+            ):
                 yield result
         elif sub in ("img2img", "i2i"):
-            async for result in self._ynai_img2img(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_img2img(event, sub_args)
+            ):
                 yield result
         elif sub in ("ref", "reference"):
-            async for result in self._ynai_ref(event, sub_args):
+            async for result in self._run_safely(
+                event, self._ynai_ref(event, sub_args)
+            ):
                 yield result
         else:
-            async for result in self._ynai_generate(
-                event, args, translate=True
+            async for result in self._run_safely(
+                event,
+                self._ynai_generate(event, args, translate=True),
             ):
                 yield result
 
@@ -1213,5 +1274,7 @@ class YesNAIPlugin(Star):
         if not args:
             yield event.plain_result("用法：/ynai0 <提示词> [--model ...] [--size ...] ...")
             return
-        async for result in self._ynai_generate(event, args, translate=False):
+        async for result in self._run_safely(
+            event, self._ynai_generate(event, args, translate=False)
+        ):
             yield result
