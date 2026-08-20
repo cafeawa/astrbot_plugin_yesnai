@@ -47,7 +47,7 @@ git clone https://github.com/cafe_awa_/astrbot_plugin_yesnai.git
 | `llm_translation_enabled` | 是否启用 LLM 翻译 Tag 功能 |
 | `show_tags` | 生图时是否展示 Tag/最终提示词，默认开启 |
 | `show_api_prompt` | 生图前展示发送给 API 的最终 Tag（调试用），默认关闭 |
-| `confirm_paid_requests` | 非免费请求是否先查询报价并二次确认，默认关闭 |
+| `confirm_paid_requests` | 非免费请求是否先查询报价并等待 y/n 确认，默认关闭 |
 | `suppress_image_llm` | 拦截含图片的消息触发默认 LLM 对话，默认关闭 |
 | `t2i_url` | 自定义文转图服务地址；留空则 `/ynai help` 不使用文转图，直接返回文本 |
 | `translation_llm` | 翻译 Tag 使用的 LLM；留空自动使用当前会话 LLM |

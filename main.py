@@ -26,6 +26,7 @@ from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.event.filter import EventMessageType
 from astrbot.api.star import Context, Star, register
+from astrbot.api.util import session_waiter
 
 # AstrBot 加载 main.py 时不一定把插件目录加入 sys.path，
 # 这里手动加入，确保同目录的 yesnai_client.py 可以被导入。
@@ -134,6 +135,7 @@ class YesNAIPlugin(Star):
 
     async def _check_paid_quote(
         self,
+        event: AstrMessageEvent,
         client: YesNAIClient,
         model: str,
         action: str,
@@ -141,7 +143,7 @@ class YesNAIPlugin(Star):
         params: dict[str, Any],
         options: dict[str, Any],
     ) -> tuple[bool, str | None]:
-        """非免费请求先查询报价；返回 (是否继续, 需要展示的消息)。"""
+        """非免费请求先查询报价并等待 y/n 确认；返回 (是否继续, 需要展示的消息)。"""
         if not self.config.get("confirm_paid_requests", False) or options.get("yes"):
             return True, None
         try:
@@ -171,10 +173,32 @@ class YesNAIPlugin(Star):
                 if balance_gems is not None
                 else ""
             )
-            return False, (
+            prompt = (
                 f"该请求预计消耗 {total_gems} Gems{balance_text}。"
-                "如确认请重新发送命令并加上 -y/--yes"
+                "确认生成请回复 y，取消请回复 n"
             )
+            await event.send(event.plain_result(prompt))
+
+            @session_waiter(60)
+            async def confirm_waiter(controller, reply_event):
+                text = (reply_event.message_str or "").strip().lower()
+                if text in ("y", "yes", "确认", "是"):
+                    if not controller.future.done():
+                        controller.future.set_result(True)
+                elif text in ("n", "no", "取消", "否"):
+                    if not controller.future.done():
+                        controller.future.set_result(False)
+
+            try:
+                confirmed = await confirm_waiter(event)
+            except TimeoutError:
+                return False, "确认超时，已取消生成"
+            except Exception as exc:
+                return False, f"等待确认时发生错误，已取消生成：{exc}"
+
+            if not confirmed:
+                return False, "已取消生成"
+            return True, None
         return True, None
 
     @staticmethod
@@ -890,7 +914,7 @@ class YesNAIPlugin(Star):
 
             client = self._get_client()
             ok_quote, quote_msg = await self._check_paid_quote(
-                client, model, "generate", final_prompt, params, options
+                event, client, model, "generate", final_prompt, params, options
             )
             if not ok_quote:
                 yield event.plain_result(quote_msg)
@@ -1080,7 +1104,7 @@ class YesNAIPlugin(Star):
 
             client = self._get_client()
             ok_quote, quote_msg = await self._check_paid_quote(
-                client, model, "img2img", final_prompt, params, options
+                event, client, model, "img2img", final_prompt, params, options
             )
             if not ok_quote:
                 yield event.plain_result(quote_msg)
@@ -1200,7 +1224,7 @@ class YesNAIPlugin(Star):
 
             client = self._get_client()
             ok_quote, quote_msg = await self._check_paid_quote(
-                client, model, "generate", final_prompt, params, options
+                event, client, model, "generate", final_prompt, params, options
             )
             if not ok_quote:
                 yield event.plain_result(quote_msg)

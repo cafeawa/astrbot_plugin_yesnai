@@ -102,7 +102,7 @@
     "description": "非免费请求是否先查询报价并二次确认",
     "type": "bool",
     "default": false,
-    "hint": "开启后，预计消耗 Gems 的请求会先显示报价，需重新发送并加 -y/--yes 确认；默认关闭"
+    "hint": "开启后，预计消耗 Gems 的请求会先显示报价并等待回复 y/n 确认；默认关闭"
   },
   "suppress_image_llm": {
     "description": "拦截含图片的消息触发默认 LLM 对话",
