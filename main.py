@@ -24,6 +24,7 @@ from typing import Any
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api.event.filter import EventMessageType
 from astrbot.api.star import Context, Star, register
 
 # AstrBot 加载 main.py 时不一定把插件目录加入 sys.path，
@@ -814,6 +815,15 @@ class YesNAIPlugin(Star):
         except Exception as exc:
             logger.exception("YesNAI 命令出现未预期错误")
             yield event.plain_result(f"操作失败: {exc}")
+
+    @filter.event_message_type(EventMessageType.ALL)
+    async def _suppress_image_llm(self, event: AstrMessageEvent):
+        """开启后，含图片的消息不触发默认 LLM 对话，但图片仍会保留在上下文。"""
+        if not self.config.get("suppress_image_llm", False):
+            return
+        if await self._get_referenced_image(event):
+            # call_llm=True 表示禁止 AstrBot 默认 LLM 请求链路
+            event.call_llm = True
 
     # ---------------------------------------------------------------
     # 公共生成逻辑

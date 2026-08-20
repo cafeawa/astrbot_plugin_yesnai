@@ -104,6 +104,12 @@
     "default": false,
     "hint": "开启后，预计消耗 Gems 的请求会先显示报价，需重新发送并加 -y/--yes 确认；默认关闭"
   },
+  "suppress_image_llm": {
+    "description": "拦截含图片的消息触发默认 LLM 对话",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，发送含图片的消息不会触发 LLM 回复，但图片仍会保留在后续对话上下文中；默认关闭"
+  },
   "t2i_url": {
     "description": "自定义文转图服务地址",
     "type": "string",
