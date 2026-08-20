@@ -147,13 +147,13 @@ class YesNAIPlugin(Star):
         if not self.config.get("confirm_paid_requests", False) or options.get("yes"):
             return True, None
         try:
-            # 报价接口使用与生成请求相同的参数，但放在顶层（与报价响应字段一致）
+            # 报价接口直接复用生图请求体，不做任何字段调整
             quote_payload: dict[str, Any] = {
                 "model": model,
                 "action": action,
                 "input": input_text,
+                "parameters": params,
             }
-            quote_payload.update(params)
             quote = await client.quote(quote_payload)
         except Exception as exc:
             return False, f"报价查询失败，已取消生成：{exc}"
