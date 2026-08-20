@@ -131,6 +131,50 @@ class YesNAIPlugin(Star):
             timeout=int(self.config.get("timeout", 600) or 600),
         )
 
+    async def _check_paid_quote(
+        self,
+        client: YesNAIClient,
+        model: str,
+        action: str,
+        input_text: str,
+        params: dict[str, Any],
+        options: dict[str, Any],
+    ) -> tuple[bool, str | None]:
+        """非免费请求先查询报价；返回 (是否继续, 需要展示的消息)。"""
+        if not self.config.get("confirm_paid_requests", False) or options.get("yes"):
+            return True, None
+        try:
+            quote_payload = {
+                "model": model,
+                "action": action,
+                "input": input_text,
+                "parameters": params,
+            }
+            quote = await client.quote(quote_payload)
+        except Exception as exc:
+            return False, f"报价查询失败，已取消生成：{exc}"
+
+        total_gems = 0
+        balance_gems = None
+        if isinstance(quote, dict):
+            try:
+                total_gems = int(quote.get("total_gems") or 0)
+            except (TypeError, ValueError):
+                total_gems = 0
+            balance_gems = quote.get("balance_gems")
+
+        if total_gems > 0:
+            balance_text = (
+                f"，当前余额 {balance_gems} Gems"
+                if balance_gems is not None
+                else ""
+            )
+            return False, (
+                f"该请求预计消耗 {total_gems} Gems{balance_text}。"
+                "如确认请重新发送命令并加上 -y/--yes"
+            )
+        return True, None
+
     @staticmethod
     def _parse_options(text: str) -> tuple[dict[str, Any], str]:
         """解析 /ynai 后面的命令行参数。
@@ -140,6 +184,7 @@ class YesNAIPlugin(Star):
         -nt / --no-translate
         -b / --both
         -s / --style
+        -y / --yes
         --model, --size, --steps, --scale, --seed, --n, --sampler, --negative
         返回 (options, 去除参数后的提示词)。
         """
@@ -173,6 +218,8 @@ class YesNAIPlugin(Star):
                 options["both"] = True
             elif tok in ("-s", "--style"):
                 options["style"] = True
+            elif tok in ("-y", "--yes"):
+                options["yes"] = True
             elif tok.startswith("--") and "=" in tok:
                 key, value = tok[2:].split("=", 1)
                 options[key] = value
@@ -831,6 +878,12 @@ class YesNAIPlugin(Star):
             yield event.plain_result(generate_msg)
 
             client = self._get_client()
+            ok_quote, quote_msg = await self._check_paid_quote(
+                client, model, "generate", final_prompt, params, options
+            )
+            if not ok_quote:
+                yield event.plain_result(quote_msg)
+                return
             resp = await client.generate_image(
                 model=model,
                 input_text=final_prompt,
@@ -947,7 +1000,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai i2i <描述> [--strength 0.5] [--noise 0.0] "
-                "[--model 模型] [--size 832x1216] [-nt]"
+                "[--model 模型] [--size 832x1216] [-nt] [-y]"
             )
             return
 
@@ -1015,6 +1068,12 @@ class YesNAIPlugin(Star):
             yield event.plain_result(generate_msg)
 
             client = self._get_client()
+            ok_quote, quote_msg = await self._check_paid_quote(
+                client, model, "img2img", final_prompt, params, options
+            )
+            if not ok_quote:
+                yield event.plain_result(quote_msg)
+                return
             resp = await client.generate_image(
                 model=model,
                 input_text=final_prompt,
@@ -1041,7 +1100,7 @@ class YesNAIPlugin(Star):
         if not prompt:
             yield event.plain_result(
                 "用法：/ynai ref <描述> [--strength 1.0] [--model 模型] "
-                "[--size 832x1216] [-nt] [-s] [-b]"
+                "[--size 832x1216] [-nt] [-s] [-b] [-y]"
             )
             return
 
@@ -1129,6 +1188,12 @@ class YesNAIPlugin(Star):
             yield event.plain_result(generate_msg)
 
             client = self._get_client()
+            ok_quote, quote_msg = await self._check_paid_quote(
+                client, model, "generate", final_prompt, params, options
+            )
+            if not ok_quote:
+                yield event.plain_result(quote_msg)
+                return
             resp = await client.generate_image(
                 model=model,
                 input_text=final_prompt,
@@ -1436,7 +1501,7 @@ class YesNAIPlugin(Star):
         """YesNAI 直接生图：/ynai0 <提示词>"""
         args = self._command_args(event)
         if not args:
-            yield event.plain_result("用法：/ynai0 <提示词> [--model ...] [--size ...] ...")
+            yield event.plain_result("用法：/ynai0 <提示词> [--model ...] [--size ...] ... [-y]")
             return
         async for result in self._run_safely(
             event, self._ynai_generate(event, args, translate=False)

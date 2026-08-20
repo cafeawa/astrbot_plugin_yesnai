@@ -98,6 +98,12 @@
     "default": false,
     "hint": "开启后会在调用 API 前显示最终正向/负向提示词；默认关闭"
   },
+  "confirm_paid_requests": {
+    "description": "非免费请求是否先查询报价并二次确认",
+    "type": "bool",
+    "default": false,
+    "hint": "开启后，预计消耗 Gems 的请求会先显示报价，需重新发送并加 -y/--yes 确认；默认关闭"
+  },
   "t2i_url": {
     "description": "自定义文转图服务地址",
     "type": "string",
